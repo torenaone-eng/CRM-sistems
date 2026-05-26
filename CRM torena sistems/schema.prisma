@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(MANAGER)
+  color        String    @default("#4f8ef7")
+  contacts     Contact[]
+  calls        Call[]
+  tasks        Task[]
+  messages     Message[]
+  deals        Deal[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Site {
+  id                    String    @id @default(uuid())
+  name                  String
+  domain                String
+  color                 String    @default("#4f8ef7")
+  active                Boolean   @default(true)
+  apiKey                String    @unique @default(uuid())
+  channels              String[]
+  assignedManagerIds    String[]
+  recordingEnabled      Boolean   @default(false)
+  disclaimerEnabled     Boolean   @default(false)
+  disclaimerText        String    @default("")
+  disclaimerVoice       Boolean   @default(false)
+  disclaimerVoiceGender String    @default("female")
+  disclaimerVoiceDelay  Int       @default(0)
+  disclaimerShowInChat  Boolean   @default(true)
+  contacts              Contact[]
+  calls                 Call[]
+  messages              Message[]
+  deals                 Deal[]
+  createdAt             DateTime  @default(now())
+
+  @@index([apiKey])
+}
+
+model Contact {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String
+  email     String?
+  company   String?
+  status    ContactStatus @default(LEAD)
+  tags      String[]
+  managerId String
+  manager   User      @relation(fields: [managerId], references: [id])
+  siteId    String
+  site      Site      @relation(fields: [siteId], references: [id])
+  calls     Call[]
+  messages  Message[]
+  deals     Deal[]
+  tasks     Task[]
+  notes     Note[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([phone])
+  @@index([siteId])
+}
+
+model Call {
+  id               String     @id @default(uuid())
+  contactId        String?
+  contact          Contact?   @relation(fields: [contactId], references: [id])
+  managerId        String
+  manager          User       @relation(fields: [managerId], references: [id])
+  siteId           String
+  site             Site       @relation(fields: [siteId], references: [id])
+  direction        Direction
+  status           CallStatus
+  phoneFrom        String
+  phoneTo          String
+  durationSec      Int        @default(0)
+  recordingKey     String?
+  disclaimerPlayed Boolean    @default(false)
+  transcript       String?
+  summary          String?
+  startedAt        DateTime   @default(now())
+  notes            Note[]
+
+  @@index([phoneFrom])
+  @@index([siteId])
+  @@index([startedAt])
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  contactId   String
+  contact     Contact  @relation(fields: [contactId], references: [id])
+  managerId   String
+  manager     User     @relation(fields: [managerId], references: [id])
+  siteId      String
+  site        Site     @relation(fields: [siteId], references: [id])
+  channel     String
+  text        String
+  incoming    Boolean  @default(true)
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([contactId])
+  @@index([siteId])
+}
+
+model Deal {
+  id          String   @id @default(uuid())
+  title       String
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id])
+  managerId   String
+  manager     User     @relation(fields: [managerId], references: [id])
+  siteId      String
+  site        Site     @relation(fields: [siteId], references: [id])
+  amount      Int      @default(0)
+  stage       String   @default("Новый")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id])
+  managerId   String
+  manager     User      @relation(fields: [managerId], references: [id])
+  dueAt       DateTime?
+  done        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+model Note {
+  id          String   @id @default(uuid())
+  body        String
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id])
+  callId      String?
+  call        Call?    @relation(fields: [callId], references: [id])
+  authorId    String
+  createdAt   DateTime @default(now())
+}
+
+enum Role          { ADMIN MANAGER }
+enum ContactStatus { LEAD CLIENT LOST }
+enum Direction     { INBOUND OUTBOUND }
+enum CallStatus    { COMPLETED MISSED BUSY }
