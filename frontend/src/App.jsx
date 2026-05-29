@@ -109,7 +109,7 @@ const save=async(k,v)=>{try{await window.storage.set(k,JSON.stringify(v));}catch
 const isLocalApp=typeof window!=="undefined"&&["localhost","127.0.0.1"].includes(window.location.hostname);
 const API_BASE=(import.meta.env.VITE_API_URL||(isLocalApp?"http://127.0.0.1:3001":window.location.origin)).replace(/\/$/,"");
 const API_TIMEOUT_MS=3500;
-const API_LOGIN={email:"admin@torenaone.ru",password:"TorenaOne2026!",name:"Алексей Морозов"};
+const API_LOGIN={email:"",password:"",name:""};
 const PUBLIC_SITE_KEY="sk_live_torenaone_main";
 const PUBLIC_CRM_URL="https://crm.torenaone-office.ru";
 const roleFromApi=role=>(role||"MANAGER").toLowerCase();
@@ -183,6 +183,12 @@ async function apiRequest(path,{method="GET",token,body}={}){
 }
 async function apiLogin(email,password){
   return apiRequest("/api/auth/login",{method:"POST",body:{email,password}});
+}
+async function apiForgotPassword(email){
+  return apiRequest("/api/auth/forgot-password",{method:"POST",body:{email}});
+}
+async function apiResetPassword(token,password){
+  return apiRequest("/api/auth/reset-password",{method:"POST",body:{token,password}});
 }
 async function publicRequest(path,{method="GET",body}={}){
   const url=method==="GET"?`${API_BASE}${path}${path.includes("?")?"&":"?"}apiKey=${encodeURIComponent(PUBLIC_SITE_KEY)}`:`${API_BASE}${path}`;
@@ -2471,28 +2477,69 @@ function PublicSite(){
   </>;
 }
 
-function LoginScreen({onLogin,onSkip,loading,error,apiError}){
-  const [form,setForm]=useState({email:API_LOGIN.email,password:API_LOGIN.password});
+function LoginScreen({onLogin,onForgotPassword,onResetPassword,loading,error,apiError}){
+  const resetToken=typeof window!=="undefined"?new URLSearchParams(window.location.search).get("resetToken"):"";
+  const [mode,setMode]=useState(resetToken?"reset":"login");
+  const [form,setForm]=useState({email:API_LOGIN.email,password:API_LOGIN.password,newPassword:"",repeatPassword:""});
+  const [notice,setNotice]=useState("");
+  const [localError,setLocalError]=useState("");
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const resetFeedback=()=>{setNotice("");setLocalError("");};
+  const requestReset=async()=>{
+    resetFeedback();
+    if(!form.email){setLocalError("Укажи email");return;}
+    try{
+      const res=await onForgotPassword(form.email);
+      setNotice(res?.message||"Если такой email есть в CRM, мы отправим ссылку для восстановления.");
+    }catch(err){setLocalError(err.message);}
+  };
+  const saveNewPassword=async()=>{
+    resetFeedback();
+    if(!form.newPassword){setLocalError("Укажи новый пароль");return;}
+    if(form.newPassword.length<8){setLocalError("Пароль должен быть минимум 8 символов");return;}
+    if(form.newPassword!==form.repeatPassword){setLocalError("Пароли не совпадают");return;}
+    try{
+      await onResetPassword(resetToken,form.newPassword);
+      if(typeof window!=="undefined")window.history.replaceState({},document.title,window.location.pathname);
+      setForm({email:"",password:"",newPassword:"",repeatPassword:""});
+      setMode("login");
+      setNotice("Пароль изменен. Теперь можно войти с новым паролем.");
+    }catch(err){
+      setLocalError(err.message==="Reset link is invalid or expired"?"Ссылка недействительна или устарела":err.message);
+    }
+  };
   return <>
     <style>{css}</style>
     <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
       <div style={{width:"100%",maxWidth:390,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:22,boxShadow:"0 18px 50px rgba(22,38,31,.10)"}}>
         <div style={{marginBottom:18}}>
           <div style={{fontSize:24,fontWeight:800,color:C.dark}}>CRM <span style={{color:C.accent}}>torenaOne</span></div>
-          <div style={{fontSize:12,color:C.muted,marginTop:4}}>Вход сотрудников в систему</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:4}}>{mode==="login"?"Вход сотрудников в систему":mode==="forgot"?"Восстановление доступа":"Новый пароль"}</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <Fld label="Email"><input value={form.email} onChange={e=>set("email",e.target.value)} autoComplete="username"/></Fld>
-          <Fld label="Пароль"><input type="password" value={form.password} onChange={e=>set("password",e.target.value)} autoComplete="current-password"/></Fld>
-          {(error||apiError)&&<div style={{fontSize:12,color:C.red,background:C.redDim,border:`1px solid ${C.red}33`,borderRadius:8,padding:10}}>{error||apiError}</div>}
-          <Btn primary disabled={loading} onClick={()=>onLogin(form)} style={{justifyContent:"center",width:"100%"}}>{loading?"Входим...":"Войти"}</Btn>
-          {onSkip&&<Btn disabled={loading} onClick={onSkip} style={{justifyContent:"center",width:"100%"}}>Продолжить локально</Btn>}
-        </div>
-        <div style={{marginTop:16,padding:12,borderRadius:10,background:C.greenDim,border:`1px solid ${C.green}33`,fontSize:12,color:C.text}}>
-          <div style={{fontWeight:700,marginBottom:4}}>Тестовый администратор</div>
-          <div className="mono">admin@torenaone.ru</div>
-          <div className="mono">TorenaOne2026!</div>
+          {mode==="login"&&<>
+            <Fld label="Email"><input value={form.email} onChange={e=>{set("email",e.target.value);resetFeedback();}} autoComplete="username"/></Fld>
+            <Fld label="Пароль"><input type="password" value={form.password} onChange={e=>{set("password",e.target.value);resetFeedback();}} autoComplete="current-password"/></Fld>
+            {(error||apiError||localError)&&<div style={{fontSize:12,color:C.red,background:C.redDim,border:`1px solid ${C.red}33`,borderRadius:8,padding:10}}>{error||apiError||localError}</div>}
+            {notice&&<div style={{fontSize:12,color:C.green,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:8,padding:10}}>{notice}</div>}
+            <Btn primary disabled={loading} onClick={()=>onLogin(form)} style={{justifyContent:"center",width:"100%"}}>{loading?"Входим...":"Войти"}</Btn>
+            <button onClick={()=>{resetFeedback();setMode("forgot");}} style={{background:"transparent",color:C.accent,fontSize:13,fontWeight:700,textAlign:"center",padding:6}}>Забыли пароль?</button>
+          </>}
+          {mode==="forgot"&&<>
+            <Fld label="Email"><input value={form.email} onChange={e=>{set("email",e.target.value);resetFeedback();}} autoComplete="username" placeholder="email сотрудника"/></Fld>
+            {(localError||apiError)&&<div style={{fontSize:12,color:C.red,background:C.redDim,border:`1px solid ${C.red}33`,borderRadius:8,padding:10}}>{localError||apiError}</div>}
+            {notice&&<div style={{fontSize:12,color:C.green,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:8,padding:10}}>{notice}</div>}
+            <Btn primary disabled={loading} onClick={requestReset} style={{justifyContent:"center",width:"100%"}}>Отправить ссылку на почту</Btn>
+            <Btn disabled={loading} onClick={()=>{resetFeedback();setMode("login");}} style={{justifyContent:"center",width:"100%"}}>Вернуться ко входу</Btn>
+          </>}
+          {mode==="reset"&&<>
+            <Fld label="Новый пароль"><input type="password" value={form.newPassword} onChange={e=>{set("newPassword",e.target.value);resetFeedback();}} autoComplete="new-password" placeholder="Минимум 8 символов"/></Fld>
+            <Fld label="Повтор нового пароля"><input type="password" value={form.repeatPassword} onChange={e=>{set("repeatPassword",e.target.value);resetFeedback();}} autoComplete="new-password"/></Fld>
+            {(localError||apiError)&&<div style={{fontSize:12,color:C.red,background:C.redDim,border:`1px solid ${C.red}33`,borderRadius:8,padding:10}}>{localError||apiError}</div>}
+            {notice&&<div style={{fontSize:12,color:C.green,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:8,padding:10}}>{notice}</div>}
+            <Btn primary disabled={loading} onClick={saveNewPassword} style={{justifyContent:"center",width:"100%"}}>Сохранить новый пароль</Btn>
+            <Btn disabled={loading} onClick={()=>{resetFeedback();setMode("login");}} style={{justifyContent:"center",width:"100%"}}>Вернуться ко входу</Btn>
+          </>}
         </div>
       </div>
     </div>
@@ -2591,8 +2638,8 @@ export default function App(){
         const savedAuth=await load("crm4:auth");
         if(!savedAuth?.token){
           applyLoadedState(null,local);
-          setApi({connected:false,token:null,error:"Локальный режим"});
-          setAuthRequired(false);
+          setApi({connected:false,token:null,error:null});
+          setAuthRequired(true);
           setLoading(false);
           return;
         }
@@ -2602,8 +2649,8 @@ export default function App(){
       }catch(error){
         console.warn("CRM API fallback:",error.message);
         applyLoadedState(null,local);
-        setApi({connected:false,token:null,error:"Локальный режим"});
-        setAuthRequired(false);
+        setApi({connected:false,token:null,error:error.message});
+        setAuthRequired(true);
       }
       setLoading(false);
     })();
@@ -2650,6 +2697,30 @@ export default function App(){
       setAuthLoading(false);
     }
   };
+  const handleForgotPassword=async(email)=>{
+    setAuthLoading(true);
+    setAuthError("");
+    try{
+      return await apiForgotPassword(email);
+    }catch(error){
+      setAuthError(error.message);
+      throw error;
+    }finally{
+      setAuthLoading(false);
+    }
+  };
+  const handleResetPassword=async(token,password)=>{
+    setAuthLoading(true);
+    setAuthError("");
+    try{
+      return await apiResetPassword(token,password);
+    }catch(error){
+      setAuthError(error.message);
+      throw error;
+    }finally{
+      setAuthLoading(false);
+    }
+  };
   const logout=async()=>{
     await save("crm4:auth",null);
     setApi({connected:false,token:null,error:null});
@@ -2657,7 +2728,7 @@ export default function App(){
   };
 
   if(loading)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:500,color:C.muted,background:C.bg,fontFamily:"Syne,sans-serif"}}>Загрузка CRM...</div>;
-  if(authRequired)return <LoginScreen onLogin={handleLogin} onSkip={()=>{setAuthRequired(false);setAuthError("");}} loading={authLoading} error={authError} apiError={api.error}/>;
+  if(authRequired)return <LoginScreen onLogin={handleLogin} onForgotPassword={handleForgotPassword} onResetPassword={handleResetPassword} loading={authLoading} error={authError} apiError={api.error}/>;
 
   const labels={dashboard:"Дашборд",exec:"Доска руководителя",features:"Функции системы",tags:"Теги",sites:"Сайты",warehouse:"Склад и продажи",inbox:"Входящие сообщения",chat:"Внутренний чат",calls:"Звонки",contacts:"Контакты",deals:"Сделки",tasks:"Задачи",team:"Команда",settings:"Настройки"};
   const openClient=()=>setModal({type:"add-contact",preset:{status:"client",leadStage:"client",tags:"Клиент"}});
