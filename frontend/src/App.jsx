@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { IMPORTED_WAREHOUSE_DOCUMENTS, IMPORTED_WAREHOUSE_POSITIONS, IMPORTED_WAREHOUSE_PRODUCTS } from "./warehousePositions";
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
 const C = {
-  bg:"#0d1117",surface:"#161b22",card:"#1c2128",border:"#30363d",
-  accent:"#4f8ef7",accentDim:"#1a2f6a",
-  green:"#3fb950",greenDim:"#1a3a20",red:"#f85149",redDim:"#3d1c1a",
-  amber:"#d29922",amberDim:"#3a2a10",purple:"#a371f7",teal:"#2dd4bf",
-  text:"#e6edf3",muted:"#7d8590",faint:"#21262d",
+  bg:"#f3f8f1",surface:"#ffffff",card:"#ffffff",border:"#dce9d8",
+  accent:"#50b743",accentDim:"#dff3d8",
+  green:"#2f8f36",greenDim:"#e4f5df",red:"#df2d34",redDim:"#fde8e8",
+  amber:"#ec672f",amberDim:"#fff0e6",purple:"#2f968b",teal:"#2f968b",
+  text:"#1f211f",muted:"#667464",faint:"#eef6ec",dark:"#16261f",
 };
 const CHANNELS={
   whatsapp:{label:"WhatsApp",color:"#25d366",icon:"W"},
@@ -18,8 +19,38 @@ const CHANNELS={
   youtube:{label:"YouTube",color:"#ff0000",icon:"Y"},
 };
 const STAGES=["Новый","Переговоры","КП отправлено","Закрыт"];
+const LEAD_STAGES=[
+  {id:"new",label:"Новые лиды",short:"Новые"},
+  {id:"qualified",label:"Квалифицировать",short:"Разбор"},
+  {id:"meeting",label:"Назначена встреча",short:"Встреча"},
+  {id:"deferred",label:"Отложенный спрос",short:"Отложено"},
+  {id:"installment",label:"Нужна рассрочка",short:"Рассрочка"},
+  {id:"refused",label:"Отказался",short:"Отказ"},
+  {id:"client",label:"Стал клиентом",short:"Клиент"},
+];
+const leadStageOf=c=>c?.leadStage||(c?.status==="client"?"client":c?.status==="lost"?"refused":"new");
 const SITE_COLORS=["#4f8ef7","#3fb950","#a371f7","#d29922","#e1306c","#ff6b35","#2dd4bf"];
 const MGR_COLORS=["#4f8ef7","#3fb950","#a371f7","#d29922","#e1306c","#ff6b35","#229ed9","#f85149","#2dd4bf","#94d82d"];
+const THEMES={
+  midnight:{label:"torenaOne",bg:"#f3f8f1",surface:"#ffffff",card:"#ffffff",accent:"#44bd32"},
+  graphite:{label:"Светлая",bg:"#f7fbf5",surface:"#ffffff",card:"#ffffff",accent:"#36a82d"},
+  emerald:{label:"Зелёная",bg:"#edf7ea",surface:"#ffffff",card:"#ffffff",accent:"#50b743"},
+  plum:{label:"Бирюзовая",bg:"#f1f7ef",surface:"#ffffff",card:"#ffffff",accent:"#2f968b"},
+};
+const DEFAULT_BOARD={stats:true,sites:true,managers:true,pipeline:true};
+const DEFAULT_FEATURES={exec:true,sites:true,warehouse:true,inbox:true,chat:true,calls:true,contacts:true,deals:true,tasks:true,team:true};
+const FEATURE_META={
+  exec:{label:"Доска руководителя",desc:"KPI, менеджеры, воронка и сигналы внимания"},
+  sites:{label:"Сайты",desc:"Подключение сайтов, каналы и запись звонков"},
+  warehouse:{label:"Склад",desc:"Товары, поступления, продажи, документы и договоры"},
+  inbox:{label:"Входящие",desc:"Омниканальные сообщения клиентов"},
+  chat:{label:"Внутренний чат",desc:"Командный чат и личные сообщения"},
+  calls:{label:"Звонки",desc:"История звонков, записи и расшифровки"},
+  contacts:{label:"Контакты",desc:"Клиенты, контрагенты, теги и фильтры"},
+  deals:{label:"Сделки",desc:"Воронка продаж, суммы, теги и этапы"},
+  tasks:{label:"Задачи",desc:"Дедлайны, просрочки и поручения"},
+  team:{label:"Команда",desc:"Пользователи, роли, темы и нагрузка"},
+};
 const DISC_TEMPLATES={
   ru:"Уважаемый клиент, обращаем ваше внимание, что данный разговор записывается в целях контроля качества обслуживания.",
   en:"Dear customer, please be advised that this call is being recorded for quality assurance purposes.",
@@ -27,8 +58,8 @@ const DISC_TEMPLATES={
 };
 const css=`
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap');
-*{box-sizing:border-box;margin:0;padding:0;scrollbar-width:thin;scrollbar-color:#30363d transparent}
-::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px}
+*{box-sizing:border-box;margin:0;padding:0;scrollbar-width:thin;scrollbar-color:${C.border} transparent}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}
 body{background:${C.bg};color:${C.text};font-family:'Syne',sans-serif;font-size:13px;line-height:1.5}
 input,textarea,select{background:${C.surface};color:${C.text};border:1px solid ${C.border};border-radius:6px;padding:7px 11px;font-family:'Syne',sans-serif;font-size:13px;outline:none;width:100%;transition:border .15s}
 input:focus,textarea:focus,select:focus{border-color:${C.accent}}
@@ -52,17 +83,115 @@ const ACOLORS=["#4f8ef7","#3fb950","#d29922","#a371f7","#e1306c","#ff6b35","#229
 const avatarColor=n=>ACOLORS[(n||"?").charCodeAt(0)%ACOLORS.length];
 const load=async k=>{try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}catch{return null;}};
 const save=async(k,v)=>{try{await window.storage.set(k,JSON.stringify(v));}catch{}};
+const API_BASE=(import.meta.env.VITE_API_URL||"http://127.0.0.1:3001").replace(/\/$/,"");
+const API_LOGIN={email:"admin@torenaone.ru",password:"TorenaOne2026!",name:"Алексей Морозов"};
+const PUBLIC_SITE_KEY="sk_live_torenaone_main";
+const roleFromApi=role=>(role||"MANAGER").toLowerCase();
+const roleToApi=role=>(role||"manager").toUpperCase();
+const statusFromApi=status=>(status||"LEAD").toLowerCase();
+const statusToApi=status=>(status||"lead").toUpperCase();
+const callStatusFromApi=status=>(status||"COMPLETED").toLowerCase();
+const callStatusToApi=status=>(status||"completed").toUpperCase();
+const directionFromApi=dir=>(dir||"INBOUND").toLowerCase();
+const directionToApi=dir=>(dir||"inbound").toUpperCase();
+const timeFromApi=v=>v?new Date(v).getTime():null;
+const dateToApi=v=>v?new Date(v).toISOString():null;
+const siteFromApi=s=>({...s,recording:{
+  enabled:!!s.recordingEnabled,
+  disclaimerEnabled:!!s.disclaimerEnabled,
+  disclaimerText:s.disclaimerText||"",
+  disclaimerVoice:!!s.disclaimerVoice,
+  disclaimerVoiceGender:s.disclaimerVoiceGender||"female",
+  disclaimerVoiceDelay:s.disclaimerVoiceDelay||0,
+  disclaimerShowInChat:s.disclaimerShowInChat!==false,
+},stats:s.stats||{calls:0,messages:0,leads:0},createdAt:timeFromApi(s.createdAt)||Date.now()});
+const siteToApi=s=>({
+  name:s.name,domain:s.domain,color:s.color,active:!!s.active,channels:s.channels||[],
+  assignedManagerIds:s.assignedManagerIds||[],
+  recordingEnabled:!!s.recording?.enabled,
+  disclaimerEnabled:!!s.recording?.disclaimerEnabled,
+  disclaimerText:s.recording?.disclaimerText||"",
+  disclaimerVoice:!!s.recording?.disclaimerVoice,
+  disclaimerVoiceGender:s.recording?.disclaimerVoiceGender||"female",
+  disclaimerVoiceDelay:parseInt(s.recording?.disclaimerVoiceDelay)||0,
+  disclaimerShowInChat:s.recording?.disclaimerShowInChat!==false,
+});
+const managerFromApi=u=>({...u,role:roleFromApi(u.role),theme:u.theme||"midnight",board:{...DEFAULT_BOARD,...(u.board||{})},createdAt:timeFromApi(u.createdAt)||Date.now()});
+const managerToApi=u=>({name:u.name,email:u.email,role:roleToApi(u.role),color:u.color||MGR_COLORS[0],theme:u.theme||"midnight",board:{...DEFAULT_BOARD,...(u.board||{})}});
+const contactFromApi=c=>({...c,status:statusFromApi(c.status),leadStage:leadStageOf({...c,status:statusFromApi(c.status)}),createdAt:timeFromApi(c.createdAt)||Date.now(),updatedAt:timeFromApi(c.updatedAt)||Date.now()});
+const contactToApi=c=>({name:c.name,phone:c.phone||"",email:c.email||null,company:c.company||null,status:statusToApi(c.status),leadStage:c.leadStage||leadStageOf(c),tags:c.tags||[],managerId:c.managerId,siteId:c.siteId});
+const dealFromApi=d=>({...d,createdAt:timeFromApi(d.createdAt)||Date.now(),updatedAt:timeFromApi(d.updatedAt)||Date.now(),tags:d.tags||[]});
+const dealToApi=d=>({title:d.title,contactId:d.contactId||null,managerId:d.managerId,siteId:d.siteId,amount:parseInt(d.amount)||0,stage:d.stage||STAGES[0],tags:d.tags||[]});
+const taskFromApi=t=>({...t,dueAt:timeFromApi(t.dueAt),createdAt:timeFromApi(t.createdAt)||Date.now()});
+const taskToApi=t=>({title:t.title,contactId:t.contactId||null,managerId:t.managerId,dueAt:dateToApi(t.dueAt),done:!!t.done});
+const callFromApi=c=>({...c,direction:directionFromApi(c.direction),status:callStatusFromApi(c.status),startedAt:timeFromApi(c.startedAt)||Date.now()});
+const callToApi=c=>({...c,direction:directionToApi(c.direction),status:callStatusToApi(c.status),startedAt:dateToApi(c.startedAt||Date.now())});
+const messageFromApi=m=>({...m,createdAt:timeFromApi(m.createdAt)||Date.now()});
+const messageToApi=m=>({contactId:m.contactId,managerId:m.managerId,siteId:m.siteId,channel:m.channel,text:m.text,incoming:!!m.incoming,read:!!m.read});
+const warehouseProductFromApi=p=>({...p,createdAt:timeFromApi(p.createdAt)||Date.now(),updatedAt:timeFromApi(p.updatedAt)||Date.now()});
+const warehouseProductToApi=p=>({sku:p.sku||"",name:p.name,category:p.category||"Товары",unit:p.unit||"шт",stock:parseInt(p.stock)||0,reserved:parseInt(p.reserved)||0,price:parseInt(p.price)||0,cost:parseInt(p.cost)||0,tags:p.tags||[]});
+const warehousePositionFromApi=p=>({...p,orderedAt:timeFromApi(p.orderedAt),receivedAt:timeFromApi(p.receivedAt),soldAt:timeFromApi(p.soldAt),createdAt:timeFromApi(p.createdAt)||Date.now(),updatedAt:timeFromApi(p.updatedAt)||Date.now()});
+const warehouseDocumentFromApi=d=>({...d,createdAt:timeFromApi(d.createdAt)||Date.now(),updatedAt:timeFromApi(d.updatedAt)||Date.now(),items:d.items||[]});
+const warehouseDocumentToApi=d=>({type:d.type,number:d.number,contactId:d.contactId||null,contactName:d.contactName||"",amount:parseInt(d.amount)||0,status:d.status||"Подготовлен",items:d.items||[],createdAt:dateToApi(d.createdAt||Date.now())});
+async function apiRequest(path,{method="GET",token,body}={}){
+  const res=await fetch(`${API_BASE}${path}`,{
+    method,
+    headers:{...(body?{"Content-Type":"application/json"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},
+    body:body?JSON.stringify(body):undefined,
+  });
+  const text=await res.text();
+  const data=text?JSON.parse(text):null;
+  if(!res.ok)throw new Error(data?.error||`API ${res.status}`);
+  return data;
+}
+async function apiLogin(email,password){
+  return apiRequest("/api/auth/login",{method:"POST",body:{email,password}});
+}
+async function publicRequest(path,{method="GET",body}={}){
+  const url=method==="GET"?`${API_BASE}${path}${path.includes("?")?"&":"?"}apiKey=${encodeURIComponent(PUBLIC_SITE_KEY)}`:`${API_BASE}${path}`;
+  const res=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify({...body,apiKey:PUBLIC_SITE_KEY}):undefined});
+  const text=await res.text();
+  const data=text?JSON.parse(text):null;
+  if(!res.ok)throw new Error(data?.error||`API ${res.status}`);
+  return data;
+}
+async function loadApiState(token){
+  const [users,sites,contacts,calls,messages,deals,tasks,warehouseProducts,warehousePositions,warehouseDocuments]=await Promise.all([
+    apiRequest("/api/users",{token}),
+    apiRequest("/api/sites",{token}),
+    apiRequest("/api/contacts",{token}),
+    apiRequest("/api/calls",{token}),
+    apiRequest("/api/messages",{token}),
+    apiRequest("/api/deals",{token}),
+    apiRequest("/api/tasks",{token}),
+    apiRequest("/api/warehouse/products",{token}),
+    apiRequest("/api/warehouse/positions",{token}),
+    apiRequest("/api/warehouse/documents",{token}),
+  ]);
+  return {token,users,sites,contacts,calls,messages,deals,tasks,warehouseProducts,warehousePositions,warehouseDocuments};
+}
+function useIsMobile(bp=720){
+  const get=()=>typeof window!=="undefined"&&window.innerWidth<=bp;
+  const [isMobile,setIsMobile]=useState(get);
+  useEffect(()=>{
+    const onResize=()=>setIsMobile(get());
+    onResize();
+    window.addEventListener("resize",onResize);
+    return()=>window.removeEventListener("resize",onResize);
+  },[bp]);
+  return isMobile;
+}
 
 // ── Seed ──────────────────────────────────────────────────────────────────────
 const SM=[
-  {id:"m1",name:"Алексей Морозов",email:"morozov@crm.ru",role:"admin",color:"#4f8ef7"},
-  {id:"m2",name:"Светлана Петрова",email:"petrova@crm.ru",role:"manager",color:"#3fb950"},
-  {id:"m3",name:"Иван Соколов",email:"sokolov@crm.ru",role:"manager",color:"#a371f7"},
+  {id:"m1",name:"Алексей Морозов",email:"morozov@crm.ru",role:"admin",color:"#4f8ef7",theme:"midnight",board:DEFAULT_BOARD},
+  {id:"m2",name:"Светлана Петрова",email:"petrova@crm.ru",role:"manager",color:"#3fb950",theme:"emerald",board:{stats:true,sites:false,managers:true,pipeline:true}},
+  {id:"m3",name:"Иван Соколов",email:"sokolov@crm.ru",role:"manager",color:"#a371f7",theme:"plum",board:{stats:true,sites:true,managers:false,pipeline:true}},
 ];
 const SS=[
   {id:"s1",name:"Главный сайт",domain:"mysite.ru",color:"#4f8ef7",active:true,apiKey:"sk_live_"+uid(),
    recording:{enabled:true,disclaimerEnabled:true,disclaimerText:DISC_TEMPLATES.ru,disclaimerVoice:true,disclaimerVoiceGender:"female",disclaimerVoiceDelay:3,disclaimerShowInChat:true},
-   channels:["whatsapp","telegram","avito"],assignedManagers:["m1","m2"],stats:{calls:142,messages:387,leads:24},createdAt:Date.now()-86400000*30},
+   channels:["whatsapp","telegram","max","avito"],assignedManagers:["m1","m2"],stats:{calls:142,messages:388,leads:24},createdAt:Date.now()-86400000*30},
   {id:"s2",name:"Интернет-магазин",domain:"shop.mysite.ru",color:"#3fb950",active:true,apiKey:"sk_live_"+uid(),
    recording:{enabled:true,disclaimerEnabled:true,disclaimerText:DISC_TEMPLATES.short,disclaimerVoice:false,disclaimerVoiceGender:"male",disclaimerVoiceDelay:0,disclaimerShowInChat:true},
    channels:["whatsapp","instagram","vk"],assignedManagers:["m2","m3"],stats:{calls:89,messages:210,leads:15},createdAt:Date.now()-86400000*10},
@@ -71,11 +200,11 @@ const SS=[
    channels:["telegram"],assignedManagers:["m1"],stats:{calls:12,messages:45,leads:3},createdAt:Date.now()-86400000*5},
 ];
 const SC=[
-  {id:"c1",name:"Анна Иванова",phone:"+7 916 234-56-78",email:"ivanova@alpha.ru",company:"ООО Альфа",status:"client",tags:["VIP"],managerId:"m1",siteId:"s1",createdAt:Date.now()-86400000*5},
-  {id:"c2",name:"Михаил Соколов",phone:"+7 903 111-22-33",email:"m.sokolov@mail.ru",company:"ИП Соколов",status:"lead",tags:["Демо"],managerId:"m2",siteId:"s2",createdAt:Date.now()-86400000*2},
-  {id:"c3",name:"Екатерина Лебедева",phone:"+7 926 555-44-33",email:"lebed@stroy.ru",company:"СтройТех",status:"lead",tags:["Тендер"],managerId:"m1",siteId:"s1",createdAt:Date.now()-86400000},
-  {id:"c4",name:"Дмитрий Козлов",phone:"+7 985 678-90-12",email:"kozlov@media.ru",company:"МедиаГрупп",status:"lost",tags:[],managerId:"m3",siteId:"s3",createdAt:Date.now()-86400000*10},
-  {id:"c5",name:"Ольга Смирнова",phone:"+7 912 345-67-89",email:"smirnova@tech.ru",company:"ТехноСтарт",status:"lead",tags:["Горячий"],managerId:"m2",siteId:"s2",createdAt:Date.now()-3600000*3},
+  {id:"c1",name:"Анна Иванова",phone:"+7 916 234-56-78",email:"ivanova@alpha.ru",company:"ООО Альфа",status:"client",leadStage:"client",tags:["VIP","дом"],managerId:"m1",siteId:"s1",createdAt:Date.now()-86400000*5},
+  {id:"c2",name:"Михаил Соколов",phone:"+7 903 111-22-33",email:"m.sokolov@mail.ru",company:"ИП Соколов",status:"lead",leadStage:"new",tags:["Демо","магазин"],managerId:"m2",siteId:"s2",createdAt:Date.now()-86400000*2},
+  {id:"c3",name:"Екатерина Лебедева",phone:"+7 926 555-44-33",email:"lebed@stroy.ru",company:"СтройТех",status:"lead",leadStage:"meeting",tags:["Тендер","оборудование"],managerId:"m1",siteId:"s1",createdAt:Date.now()-86400000},
+  {id:"c4",name:"Дмитрий Козлов",phone:"+7 985 678-90-12",email:"kozlov@media.ru",company:"МедиаГрупп",status:"lost",leadStage:"refused",tags:["отказ"],managerId:"m3",siteId:"s3",createdAt:Date.now()-86400000*10},
+  {id:"c5",name:"Ольга Смирнова",phone:"+7 912 345-67-89",email:"smirnova@tech.ru",company:"ТехноСтарт",status:"lead",leadStage:"installment",tags:["Горячий","рассрочка"],managerId:"m2",siteId:"s2",createdAt:Date.now()-3600000*3},
 ];
 const SCL=[
   {id:"cl1",contactId:"c1",managerId:"m1",siteId:"s1",direction:"inbound",status:"completed",phoneFrom:"+7 916 234-56-78",phoneTo:"+7 800 555-00-00",durationSec:374,disclaimerPlayed:true,transcript:"[🔴 Предупреждение]: Уважаемый клиент, данный разговор записывается в целях контроля качества обслуживания.\n\n— Добрый день! Хочу узнать о тарифе Pro.\n— Здравствуйте, Анна! Тариф Pro включает...",summary:"Тариф Pro · реквизиты до пт",startedAt:Date.now()-3600000*2},
@@ -92,12 +221,13 @@ const SMS=[
   {id:"ms5",contactId:"c5",channel:"instagram",managerId:"m2",siteId:"s2",text:"Привет, увидела рекламу, хочу узнать цены",incoming:true,read:false,createdAt:Date.now()-900000},
   {id:"ms6",contactId:"c4",channel:"vk",managerId:"m3",siteId:"s3",text:"Ваше предложение неактуально, спасибо",incoming:true,read:true,createdAt:Date.now()-86400000},
   {id:"ms7",contactId:"c1",channel:"telegram",managerId:"m1",siteId:"s1",text:"Можете добавить меня в телеграм?",incoming:true,read:false,createdAt:Date.now()-600000},
+  {id:"ms8",contactId:"c3",channel:"max",managerId:"m1",siteId:"s1",text:"Здравствуйте! Пишу из MAX, хочу уточнить условия подключения",incoming:true,read:false,createdAt:Date.now()-420000},
 ];
 const SD=[
-  {id:"d1",title:"Тариф Pro · Альфа",contactId:"c1",managerId:"m1",siteId:"s1",amount:48000,stage:"Переговоры",createdAt:Date.now()-86400000*2},
-  {id:"d2",title:"Поставка · СтройТех",contactId:"c3",managerId:"m1",siteId:"s1",amount:340000,stage:"КП отправлено",createdAt:Date.now()-86400000},
-  {id:"d3",title:"Демо · ИП Соколов",contactId:"c2",managerId:"m2",siteId:"s2",amount:12000,stage:"Новый",createdAt:Date.now()-3600000*5},
-  {id:"d4",title:"Реклама · ТехноСтарт",contactId:"c5",managerId:"m2",siteId:"s2",amount:85000,stage:"Новый",createdAt:Date.now()-3600000*3},
+  {id:"d1",title:"Тариф Pro · Альфа",contactId:"c1",managerId:"m1",siteId:"s1",amount:48000,stage:"Переговоры",tags:["VIP","подписка"],createdAt:Date.now()-86400000*2},
+  {id:"d2",title:"Поставка · СтройТех",contactId:"c3",managerId:"m1",siteId:"s1",amount:340000,stage:"КП отправлено",tags:["склад","тендер"],createdAt:Date.now()-86400000},
+  {id:"d3",title:"Демо · ИП Соколов",contactId:"c2",managerId:"m2",siteId:"s2",amount:12000,stage:"Новый",tags:["демо"],createdAt:Date.now()-3600000*5},
+  {id:"d4",title:"Реклама · ТехноСтарт",contactId:"c5",managerId:"m2",siteId:"s2",amount:85000,stage:"Новый",tags:["горячий"],createdAt:Date.now()-3600000*3},
 ];
 const STK=[
   {id:"t1",title:"Перезвонить Соколову",contactId:"c2",managerId:"m2",dueAt:Date.now()+86400000,done:false,createdAt:Date.now()-3600000*2},
@@ -105,6 +235,26 @@ const STK=[
   {id:"t3",title:"Уточнить тендер Лебедевой",contactId:"c3",managerId:"m1",dueAt:Date.now()+3600000*8,done:false,createdAt:Date.now()-1800000},
   {id:"t4",title:"Прислать прайс Смирновой",contactId:"c5",managerId:"m2",dueAt:Date.now()-3600000,done:false,createdAt:Date.now()-7200000},
   {id:"t5",title:"Согласовать счёт",contactId:"c3",managerId:"m1",dueAt:Date.now()-86400000,done:true,createdAt:Date.now()-86400000*2},
+];
+const SP=[
+  {id:"p1",sku:"CRM-PRO-12",name:"Лицензия CRM Pro · 12 мес",category:"Подписки",unit:"шт",stock:18,reserved:3,price:48000,cost:18000,tags:["подписка","pro"]},
+  {id:"p2",sku:"CALL-REC",name:"Модуль записи звонков",category:"Модули",unit:"шт",stock:9,reserved:1,price:22000,cost:7000,tags:["звонки","rec"]},
+  {id:"p3",sku:"MESS-MAX",name:"Интеграция MAX",category:"Интеграции",unit:"шт",stock:24,reserved:2,price:15000,cost:4000,tags:["max","мессенджер"]},
+  {id:"p4",sku:"SETUP-BASE",name:"Настройка и обучение",category:"Услуги",unit:"час",stock:40,reserved:8,price:3500,cost:1200,tags:["услуги"]},
+  {id:"p5",sku:"SIP-GW",name:"SIP-шлюз для телефонии",category:"Оборудование",unit:"шт",stock:6,reserved:0,price:18500,cost:11200,tags:["sip","оборудование"]},
+];
+const SWD=[
+  {id:"doc1",type:"Товарная накладная",number:"TORG-12-0001",contactId:"c3",amount:340000,status:"Подготовлен",createdAt:Date.now()-86400000},
+  {id:"doc2",type:"Счет на оплату",number:"INV-0002",contactId:"c1",amount:48000,status:"Отправлен",createdAt:Date.now()-3600000*3},
+];
+const SWC=[
+  {id:"ctr1",contactId:"c1",number:"Д-24/001",subject:"Поставка лицензий и модулей CRM",status:"Действует",amount:180000,validTo:Date.now()+86400000*180},
+  {id:"ctr2",contactId:"c3",number:"Д-24/014",subject:"Оборудование и внедрение",status:"Согласование",amount:340000,validTo:Date.now()+86400000*45},
+];
+const SIM=[
+  {id:"im1",fromId:"m2",toId:"team",text:"Коллеги, сегодня фокус на входящие из MAX и лиды с главного сайта.",createdAt:Date.now()-3600000*2,pinned:true},
+  {id:"im2",fromId:"m1",toId:"m2",text:"Светлана, посмотри сделку по ТехноСтарт, там высокий чек.",createdAt:Date.now()-3600000,task:true},
+  {id:"im3",fromId:"m3",toId:"team",text:"Я закрыл вопрос по промо-лендингу, жду новые материалы.",createdAt:Date.now()-1800000},
 ];
 
 // ── Atoms ─────────────────────────────────────────────────────────────────────
@@ -127,6 +277,20 @@ function Btn({children,onClick,primary,danger,small,style:sx,disabled}){
     style={{background:bg,color:col,border:`1px solid ${brd}`,borderRadius:7,padding:small?"5px 10px":"8px 14px",fontSize:small?12:13,display:"inline-flex",alignItems:"center",gap:6,opacity:disabled?.4:1,...sx}}
     onMouseEnter={e=>{if(!disabled)e.currentTarget.style.opacity=".8"}}
     onMouseLeave={e=>{e.currentTarget.style.opacity="1"}}>{children}</button>;
+}
+function QuickCreateBar({features,onClient,onLead,onProduct,onSource,onDeal,onTask,onDocument,mobile=false}){
+  const items=[
+    ["contacts","+ Клиент",onClient],
+    ["contacts","+ Лид",onLead],
+    ["warehouse","+ Товар",onProduct],
+    ["sites","+ Источник",onSource],
+    ["deals","+ Сделка",onDeal],
+    ["tasks","+ Задача",onTask],
+    ["warehouse","+ Документ",onDocument],
+  ].filter(([feature,,action])=>action&&(feature==="always"||features?.[feature]));
+  return <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:mobile?"flex-start":"flex-end",flexWrap:mobile?"nowrap":"wrap",overflowX:mobile?"auto":"visible",width:mobile?"100%":"auto",paddingBottom:mobile?2:0}}>
+    {items.map(([_,label,action])=><Btn key={label} small onClick={action} style={{whiteSpace:"nowrap",flexShrink:0}}>{label}</Btn>)}
+  </div>;
 }
 function Toggle({checked,onChange,label,sub}){
   return <label style={{display:"flex",alignItems:"flex-start",gap:12,cursor:"pointer"}}>
@@ -165,6 +329,15 @@ function SiteBadge({siteId,sites}){
 function RecDot({on}){
   return on?<div className="blink" title="Запись ведётся" style={{width:7,height:7,borderRadius:"50%",background:C.red,flexShrink:0}}/>:null;
 }
+class ErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={error:null};}
+  static getDerivedStateFromError(error){return{error};}
+  componentDidCatch(error){console.error(error);}
+  render(){
+    if(this.state.error)return <div style={{padding:24,color:C.red,background:C.bg,flex:1,overflow:"auto"}}><div style={{fontWeight:700,marginBottom:8}}>Ошибка экрана</div><pre style={{whiteSpace:"pre-wrap",fontSize:12}}>{this.state.error.message}</pre></div>;
+    return this.props.children;
+  }
+}
 
 // ── AudioPlayer ───────────────────────────────────────────────────────────────
 function AudioPlayer({durationSec}){
@@ -195,27 +368,57 @@ function AudioPlayer({durationSec}){
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 const NAV=[
   {id:"dashboard",label:"Дашборд",ic:"⊞"},
+  {id:"exec",label:"Руководитель",ic:"◎"},
+  {id:"features",label:"Функции",ic:"☷"},
   {id:"sites",label:"Сайты",ic:"◫"},
+  {id:"warehouse",label:"Склад",ic:"▦"},
   {id:"inbox",label:"Входящие",ic:"✉"},
+  {id:"chat",label:"Чат",ic:"☰"},
   {id:"calls",label:"Звонки",ic:"✆"},
   {id:"contacts",label:"Контакты",ic:"◈"},
   {id:"deals",label:"Сделки",ic:"◇"},
   {id:"tasks",label:"Задачи",ic:"☑"},
   {id:"team",label:"Команда",ic:"◉"},
+  {id:"settings",label:"Настройки",ic:"⚙"},
 ];
-function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentManager}){
-  return <div style={{width:195,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
-    <div style={{padding:"15px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{fontSize:15,fontWeight:700,color:C.accent}}>МояCRM</div>
-      <div style={{fontSize:10,color:C.muted,marginTop:1}}>{sites.filter(s=>s.active).length} сайта активно</div>
+function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentManager,features=DEFAULT_FEATURES,mobile=false}){
+  const visibleNav=NAV.filter(n=>["dashboard","features","settings"].includes(n.id)||features[n.id]);
+  const sideBg="#14251d";
+  const sideLine="rgba(255,255,255,.08)";
+  const sideMuted="#b7c6b2";
+  if(mobile)return <div style={{background:sideBg,color:"#fff",borderBottom:`1px solid ${sideLine}`,flexShrink:0}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 12px",borderBottom:`1px solid ${sideLine}`}}>
+      <div>
+        <div style={{fontSize:15,fontWeight:700}}>CRM <span style={{color:C.accent}}>torenaOne</span></div>
+        <div style={{fontSize:10,color:sideMuted}}>{sites.filter(s=>s.active).length} сайта активно</div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
+        <Avatar name={currentManager?.name||"?"} size={28} color={currentManager?.color}/>
+        <div style={{fontSize:11,fontWeight:600,maxWidth:95,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentManager?.name?.split(" ")[0]||"—"}</div>
+      </div>
     </div>
-    <nav style={{padding:"6px 0",flex:1,overflowY:"auto"}}>
-      {NAV.map(n=>{
+    <nav style={{display:"flex",gap:6,overflowX:"auto",padding:"8px 10px",scrollbarWidth:"none"}}>
+      {visibleNav.map(n=>{
         const active=page===n.id;
         const badge=n.id==="inbox"?unread:n.id==="calls"?missed:n.id==="tasks"?overdueTasksCount:0;
-        return <div key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 14px",cursor:"pointer",color:active?C.accent:C.muted,background:active?C.accentDim+"38":"transparent",borderLeft:`2px solid ${active?C.accent:"transparent"}`,transition:"all .12s",fontWeight:active?600:400}}
-          onMouseEnter={e=>{if(!active){e.currentTarget.style.color=C.text;e.currentTarget.style.background=C.faint;}}}
-          onMouseLeave={e=>{if(!active){e.currentTarget.style.color=C.muted;e.currentTarget.style.background="transparent";}}}>
+        return <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:"0 0 auto",display:"inline-flex",alignItems:"center",gap:6,padding:"7px 10px",borderRadius:8,background:active?"rgba(80,183,67,.28)":"rgba(255,255,255,.06)",color:active?"#fff":sideMuted,border:`1px solid ${active?C.accent:"transparent"}`,fontWeight:active?700:500}}>
+          <span>{n.ic}</span><span>{n.label}</span>{badge>0&&<span style={{background:n.id==="calls"?C.red:n.id==="tasks"?C.amber:C.accent,color:"#fff",borderRadius:10,fontSize:10,padding:"1px 5px",fontWeight:700}}>{badge}</span>}
+        </button>;
+      })}
+    </nav>
+  </div>;
+  return <div style={{width:195,background:sideBg,borderRight:`1px solid ${sideLine}`,display:"flex",flexDirection:"column",flexShrink:0,color:"#fff"}}>
+    <div style={{padding:"15px 14px",borderBottom:`1px solid ${sideLine}`}}>
+      <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>CRM <span style={{color:C.accent}}>torenaOne</span></div>
+      <div style={{fontSize:10,color:sideMuted,marginTop:1}}>{sites.filter(s=>s.active).length} сайта активно</div>
+    </div>
+    <nav style={{padding:"6px 0",flex:1,overflowY:"auto"}}>
+      {visibleNav.map(n=>{
+        const active=page===n.id;
+        const badge=n.id==="inbox"?unread:n.id==="calls"?missed:n.id==="tasks"?overdueTasksCount:0;
+        return <div key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 14px",cursor:"pointer",color:active?"#fff":sideMuted,background:active?"rgba(68,189,50,.22)":"transparent",borderLeft:`2px solid ${active?C.accent:"transparent"}`,transition:"all .12s",fontWeight:active?600:400}}
+          onMouseEnter={e=>{if(!active){e.currentTarget.style.color="#fff";e.currentTarget.style.background="rgba(255,255,255,.06)";}}}
+          onMouseLeave={e=>{if(!active){e.currentTarget.style.color=sideMuted;e.currentTarget.style.background="transparent";}}}>
           <span style={{fontSize:14}}>{n.ic}</span>
           <span style={{fontSize:13}}>{n.label}</span>
           {badge>0&&<span style={{marginLeft:"auto",background:n.id==="calls"?C.red:n.id==="tasks"?C.amber:C.accent,color:"#fff",borderRadius:10,fontSize:10,padding:"1px 6px",fontWeight:700}}>{badge}</span>}
@@ -223,20 +426,20 @@ function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentMana
       })}
     </nav>
     {/* Sites mini */}
-    <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`}}>
-      <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:7}}>Сайты</div>
+    <div style={{padding:"8px 14px",borderTop:`1px solid ${sideLine}`}}>
+      <div style={{fontSize:10,color:sideMuted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:7}}>Сайты</div>
       {sites.slice(0,3).map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
-        <div style={{width:7,height:7,borderRadius:"50%",background:s.active?s.color:C.muted,flexShrink:0}}/>
-        <div style={{fontSize:11,color:s.active?C.text:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{s.name}</div>
+        <div style={{width:7,height:7,borderRadius:"50%",background:s.active?s.color:sideMuted,flexShrink:0}}/>
+        <div style={{fontSize:11,color:s.active?"#fff":sideMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{s.name}</div>
         {s.recording.enabled&&<div className="blink" style={{width:5,height:5,borderRadius:"50%",background:C.red}}/>}
       </div>)}
     </div>
-    <div style={{padding:"10px 14px",borderTop:`1px solid ${C.border}`}}>
+    <div style={{padding:"10px 14px",borderTop:`1px solid ${sideLine}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <Avatar name={currentManager?.name||"?"} size={26} color={currentManager?.color}/>
         <div style={{minWidth:0}}>
           <div style={{fontSize:11,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentManager?.name?.split(" ")[0]||"—"}</div>
-          <div style={{fontSize:10,color:C.muted}}>{currentManager?.role==="admin"?"Администратор":"Менеджер"}</div>
+          <div style={{fontSize:10,color:sideMuted}}>{currentManager?.role==="admin"?"Администратор":"Менеджер"}</div>
         </div>
       </div>
     </div>
@@ -244,7 +447,7 @@ function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentMana
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage}){
+function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage,board=DEFAULT_BOARD,mobile=false}){
   const unread=messages.filter(m=>m.incoming&&!m.read).length;
   const missed=calls.filter(c=>c.status==="missed").length;
   const overdue=tasks.filter(t=>!t.done&&t.dueAt&&t.dueAt<Date.now()).length;
@@ -260,7 +463,7 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage})
   </div>;
 
   return <div className="ani" style={{padding:20,overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:16}}>
-    {noDiscl.length>0&&<div style={{background:"#2a1a00",border:`1px solid ${C.amber}55`,borderRadius:12,padding:"12px 16px",display:"flex",gap:12,alignItems:"center"}}>
+    {noDiscl.length>0&&<div style={{background:C.amberDim,border:`1px solid ${C.amber}55`,borderRadius:12,padding:"12px 16px",display:"flex",gap:12,alignItems:"center"}}>
       <span style={{fontSize:20,flexShrink:0}}>⚠️</span>
       <div>
         <div style={{fontWeight:600,color:C.amber,marginBottom:3}}>Запись без предупреждения клиента!</div>
@@ -269,15 +472,15 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage})
       <Btn small onClick={()=>setPage("sites")} style={{flexShrink:0}}>Исправить</Btn>
     </div>}
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10}}>
+    {board.stats&&<div style={{display:"grid",gridTemplateColumns:mobile?"repeat(2,minmax(0,1fr))":"repeat(4,minmax(0,1fr))",gap:10}}>
       <Stat label="Сайты" val={sites.filter(s=>s.active).length} sub={`из ${sites.length} подключено`} onClick={()=>setPage("sites")}/>
       <Stat label="Непрочитанных" val={unread} color={unread>0?C.accent:C.muted} sub="сообщений" onClick={()=>setPage("inbox")}/>
       <Stat label="Пропущено" val={missed} color={missed>0?C.red:C.muted} sub="звонков" onClick={()=>setPage("calls")}/>
       <Stat label="Просрочено" val={overdue} color={overdue>0?C.amber:C.muted} sub="задач" onClick={()=>setPage("tasks")}/>
-    </div>
+    </div>}
 
     {/* Sites activity */}
-    <div>
+    {board.sites&&<div>
       <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>Активность по сайтам</div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {sites.map(s=>{
@@ -294,17 +497,17 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage})
             <div style={{fontSize:11,color:C.muted,textAlign:"right"}}>
               <div>{sCalls} зв. · {sMsgs} сообщ. · {sLeads} лидов</div>
             </div>
-            {s.recording.enabled&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.red,padding:"2px 7px",background:"#1a0a0a",borderRadius:20,border:`1px solid ${C.red}44`}}>
+            {s.recording.enabled&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:C.red,padding:"2px 7px",background:C.redDim,borderRadius:20,border:`1px solid ${C.red}44`}}>
               <RecDot on/>{s.recording.disclaimerEnabled?"REC":"REC ⚠️"}
             </div>}
             {!s.active&&<Badge label="Откл." color={C.muted} small/>}
           </div>;
         })}
       </div>
-    </div>
+    </div>}
 
     {/* Managers load */}
-    <div>
+    {board.managers&&<div>
       <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>Нагрузка менеджеров</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
         {managers.map(m=>{
@@ -320,10 +523,10 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage})
           </div>;
         })}
       </div>
-    </div>
+    </div>}
 
     {/* Pipeline */}
-    <div>
+    {board.pipeline&&<div>
       <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>Воронка · {pipeline.toLocaleString()} ₽ в работе</div>
       <div style={{display:"flex",gap:6}}>
         {STAGES.map(st=>{
@@ -337,7 +540,7 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage})
           </div>;
         })}
       </div>
-    </div>
+    </div>}
   </div>;
 }
 
@@ -366,12 +569,12 @@ function SiteModal({initial,managers,onSave,onClose}){
     </div>}
 
     {tab==="recording"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{border:`1px solid ${form.recording.enabled?C.green+"44":C.border}`,borderRadius:12,padding:14,background:form.recording.enabled?"#0d1f0d":"transparent",transition:"all .3s"}}>
+      <div style={{border:`1px solid ${form.recording.enabled?C.green+"44":C.border}`,borderRadius:12,padding:14,background:form.recording.enabled?C.greenDim:"transparent",transition:"all .3s"}}>
         <Toggle checked={form.recording.enabled} onChange={()=>setR("enabled",!form.recording.enabled)} label="🔴 Запись звонков" sub="Все звонки с этого сайта будут записываться и храниться в MinIO/S3"/>
       </div>
 
       {form.recording.enabled&&<>
-        <div style={{border:`1px solid ${form.recording.disclaimerEnabled?C.red+"44":C.border}`,borderRadius:12,padding:14,background:form.recording.disclaimerEnabled?"#1a0a0a":"transparent",transition:"all .3s"}}>
+        <div style={{border:`1px solid ${form.recording.disclaimerEnabled?C.red+"44":C.border}`,borderRadius:12,padding:14,background:form.recording.disclaimerEnabled?C.redDim:"transparent",transition:"all .3s"}}>
           <Toggle checked={form.recording.disclaimerEnabled} onChange={()=>setR("disclaimerEnabled",!form.recording.disclaimerEnabled)} label="⚠️ Предупреждение о записи" sub="Клиент будет уведомлён в начале разговора (требование закона)"/>
         </div>
 
@@ -411,7 +614,7 @@ function SiteModal({initial,managers,onSave,onClose}){
           </div>
 
           {/* Preview */}
-          <div style={{background:"#1a0a0a",border:`1px solid ${C.red}44`,borderRadius:10,padding:12}}>
+          <div style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:10,padding:12}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
               <RecDot on/>
               <span style={{color:C.red,fontSize:11,fontWeight:600}}>Предпросмотр предупреждения</span>
@@ -483,7 +686,7 @@ function Sites({sites,managers,onAdd,onEdit,onDelete,onToggle}){
               ))}
             </div>
             {/* Recording status */}
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:8,background:s.recording.enabled?"#1a0a0a":C.surface,border:`1px solid ${s.recording.enabled?C.red+"44":C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:8,background:s.recording.enabled?C.redDim:C.surface,border:`1px solid ${s.recording.enabled?C.red+"44":C.border}`}}>
               {s.recording.enabled?<>
                 <RecDot on/>
                 <div style={{flex:1}}>
@@ -523,7 +726,7 @@ function Sites({sites,managers,onAdd,onEdit,onDelete,onToggle}){
 }
 
 // ── Inbox ─────────────────────────────────────────────────────────────────────
-function Inbox({messages,contacts,managers,sites,currentManager,onSend,onRead}){
+function Inbox({messages,contacts,managers,sites,currentManager,onSend,onRead,mobile=false}){
   const [sel,setSel]=useState(null);
   const [reply,setReply]=useState("");
   const [replyCh,setReplyCh]=useState("whatsapp");
@@ -554,9 +757,9 @@ function Inbox({messages,contacts,managers,sites,currentManager,onSend,onRead}){
     setReply("");
   };
 
-  return <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+  return <div style={{display:"flex",flexDirection:mobile?"column":"row",flex:1,overflow:"hidden"}}>
     {/* Thread list */}
-    <div style={{width:265,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{width:mobile?"100%":265,height:mobile?260:"auto",borderRight:mobile?"none":`1px solid ${C.border}`,borderBottom:mobile?`1px solid ${C.border}`:"none",display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
       <div style={{padding:10,borderBottom:`1px solid ${C.border}`,display:"flex",flexDirection:"column",gap:8}}>
         <select value={chFilter} onChange={e=>setChFilter(e.target.value)} style={{fontSize:12}}>
           <option value="all">Все каналы</option>
@@ -604,7 +807,7 @@ function Inbox({messages,contacts,managers,sites,currentManager,onSend,onRead}){
             <div style={{fontSize:11,color:C.muted}}>{selT.ct.company} · {selT.ct.phone}</div>
           </div>
           <SiteBadge siteId={selT.ct.siteId} sites={sites}/>
-          {(()=>{const site=getSite(selT.ct.siteId);return site?.recording?.enabled&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.red,padding:"3px 9px",background:"#1a0a0a",borderRadius:20,border:`1px solid ${C.red}44`}}><RecDot on/>REC</div>;})()}
+          {(()=>{const site=getSite(selT.ct.siteId);return site?.recording?.enabled&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.red,padding:"3px 9px",background:C.redDim,borderRadius:20,border:`1px solid ${C.red}44`}}><RecDot on/>REC</div>;})()}
         </div>
         <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:8}}>
           {selT.msgs.map(msg=>{
@@ -614,7 +817,7 @@ function Inbox({messages,contacts,managers,sites,currentManager,onSend,onRead}){
               {!isOut&&<ChIcon ch={msg.channel} size={16}/>}
               <div style={{maxWidth:"72%"}}>
                 {isDisc&&isOut&&<div style={{fontSize:10,color:C.red,marginBottom:3,display:"flex",alignItems:"center",gap:4}}><div style={{width:5,height:5,borderRadius:"50%",background:C.red}}/>Предупреждение о записи</div>}
-                <div style={{background:isOut?C.accent:isDisc?"#1a0a0a":C.card,color:"#fff",borderRadius:isOut?"12px 12px 3px 12px":"12px 12px 12px 3px",padding:"8px 12px",fontSize:13,border:isOut?"none":isDisc?`1px solid ${C.red}44`:`1px solid ${C.border}`,lineHeight:1.6,whiteSpace:"pre-wrap",color:isOut?"#fff":C.text}}>{msg.text}</div>
+                <div style={{background:isOut?C.accent:isDisc?C.redDim:C.card,borderRadius:isOut?"12px 12px 3px 12px":"12px 12px 12px 3px",padding:"8px 12px",fontSize:13,border:isOut?"none":isDisc?`1px solid ${C.red}44`:`1px solid ${C.border}`,lineHeight:1.6,whiteSpace:"pre-wrap",color:isOut?"#fff":C.text}}>{msg.text}</div>
                 <div style={{fontSize:10,color:C.muted,marginTop:2,textAlign:isOut?"right":"left"}}>{fmt(msg.createdAt)}</div>
               </div>
             </div>;
@@ -658,7 +861,7 @@ function CallModal({contacts,managers,sites,onSave,onClose}){
         <Fld label="Менеджер"><select value={form.managerId} onChange={e=>set("managerId",e.target.value)}>{managers.map(m=><option key={m.id} value={m.id}>{m.name.split(" ")[0]}</option>)}</select></Fld>
       </div>
       <Fld label="Длительность (сек)"><input type="number" value={form.durationSec} onChange={e=>set("durationSec",+e.target.value||0)}/></Fld>
-      {recEnabled&&<label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:9,border:`1px solid ${C.red}44`,background:"#1a0a0a",cursor:"pointer"}}>
+      {recEnabled&&<label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:9,border:`1px solid ${C.red}44`,background:C.redDim,cursor:"pointer"}}>
         <input type="checkbox" checked={form.disclaimerPlayed} onChange={()=>set("disclaimerPlayed",!form.disclaimerPlayed)}/>
         <div><div style={{fontSize:13,fontWeight:500,color:C.red}}>Предупреждение о записи озвучено</div><div style={{fontSize:11,color:C.muted}}>Клиент был уведомлён в начале звонка</div></div>
       </label>}
@@ -672,7 +875,7 @@ function CallModal({contacts,managers,sites,onSave,onClose}){
   </Modal>;
 }
 
-function Calls({calls,contacts,managers,sites,onAdd}){
+function Calls({calls,contacts,managers,sites,onAdd,mobile=false}){
   const [sel,setSel]=useState(null);
   const [search,setSearch]=useState("");
   const [siteF,setSiteF]=useState("all");
@@ -687,8 +890,8 @@ function Calls({calls,contacts,managers,sites,onAdd}){
   const selC=sel?calls.find(c=>c.id===sel):null;
   const selCt=selC?getC(selC.contactId):null;
   const selSite=selC?getSite(selC.siteId):null;
-  return <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",borderRight:`1px solid ${C.border}`}}>
+  return <div style={{display:"flex",flexDirection:mobile?"column":"row",flex:1,overflow:"hidden"}}>
+    <div style={{flex:mobile?"0 0 330px":1,display:"flex",flexDirection:"column",overflow:"hidden",borderRight:mobile?"none":`1px solid ${C.border}`,borderBottom:mobile?`1px solid ${C.border}`:"none"}}>
       <div style={{padding:10,borderBottom:`1px solid ${C.border}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Поиск..." style={{flex:1,minWidth:110}}/>
         <select value={siteF} onChange={e=>setSiteF(e.target.value)} style={{width:130,fontSize:12}}>
@@ -716,7 +919,7 @@ function Calls({calls,contacts,managers,sites,onAdd}){
                 {site&&<span style={{color:site.color}}>◆ {site.name}</span>}<span>· {fmt(c.startedAt)}</span>
               </div>
             </div>
-            {c.disclaimerPlayed&&<div title="Предупреждение озвучено" style={{display:"flex",alignItems:"center",gap:3,fontSize:10,color:C.red,padding:"2px 6px",background:"#1a0a0a",borderRadius:20,border:`1px solid ${C.red}44`}}><RecDot on/>REC</div>}
+            {c.disclaimerPlayed&&<div title="Предупреждение озвучено" style={{display:"flex",alignItems:"center",gap:3,fontSize:10,color:C.red,padding:"2px 6px",background:C.redDim,borderRadius:20,border:`1px solid ${C.red}44`}}><RecDot on/>REC</div>}
             <MgrBadge managerId={c.managerId} managers={managers}/>
             <Badge label={{completed:"Завершён",missed:"Пропущен",busy:"Занято"}[c.status]||c.status} color={stCol} small/>
             <span className="mono" style={{color:C.muted,minWidth:34,textAlign:"right"}}>{fmtDur(c.durationSec)}</span>
@@ -724,7 +927,7 @@ function Calls({calls,contacts,managers,sites,onAdd}){
         })}
       </div>
     </div>
-    <div style={{width:300,overflowY:"auto",background:C.surface}}>
+    <div style={{width:mobile?"100%":300,flex:mobile?1:"0 0 300px",overflowY:"auto",background:C.surface}}>
       {!selC?<div style={{padding:40,textAlign:"center",color:C.muted}}><div style={{fontSize:32,opacity:.2}}>✆</div>Выбери звонок</div>
       :<div className="ani" style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -736,7 +939,7 @@ function Calls({calls,contacts,managers,sites,onAdd}){
           <span style={{fontSize:12,fontWeight:500,color:selSite.color}}>{selSite.name}</span>
           <span className="mono" style={{color:C.muted}}>{selSite.domain}</span>
         </div>}
-        {selC.disclaimerPlayed&&<div style={{background:"#1a0a0a",border:`1px solid ${C.red}44`,borderRadius:9,padding:"9px 12px"}}>
+        {selC.disclaimerPlayed&&<div style={{background:C.redDim,border:`1px solid ${C.red}44`,borderRadius:9,padding:"9px 12px"}}>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}><RecDot on/><span style={{color:C.red,fontSize:11,fontWeight:600}}>Предупреждение озвучено</span></div>
           <div style={{fontSize:11,color:C.muted}}>Клиент уведомлён о записи в начале звонка</div>
         </div>}
@@ -761,10 +964,16 @@ function Calls({calls,contacts,managers,sites,onAdd}){
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
-function ContactModal({initial,managers,sites,onSave,onClose}){
-  const blank={name:"",phone:"",email:"",company:"",status:"lead",tags:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||""};
-  const [form,setForm]=useState(initial?{...initial,tags:initial.tags?.join(", ")||""}:{...blank});
+function ContactModal({initial,preset,managers,sites,onSave,onClose}){
+  const blank={name:"",phone:"",email:"",company:"",status:"lead",leadStage:"new",tags:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||""};
+  const [form,setForm]=useState(initial?{...initial,tags:initial.tags?.join(", ")||""}:{...blank,...(preset||{})});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const saveContact=()=>{
+    if(!form.name||!form.phone)return;
+    const nextStage=form.leadStage||leadStageOf(form);
+    const nextStatus=nextStage==="client"?"client":nextStage==="refused"?"lost":form.status;
+    onSave({...form,status:nextStatus,leadStage:nextStage,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});
+  };
   return <Modal title={initial?"Редактировать контакт":"Новый контакт"} onClose={onClose} width={460}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <Fld label="Имя *"><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Анна Иванова"/></Fld>
@@ -775,33 +984,114 @@ function ContactModal({initial,managers,sites,onSave,onClose}){
         <Fld label="Статус"><select value={form.status} onChange={e=>set("status",e.target.value)}><option value="lead">Лид</option><option value="client">Клиент</option><option value="lost">Потерян</option></select></Fld>
         <Fld label="Сайт-источник"><select value={form.siteId} onChange={e=>set("siteId",e.target.value)}>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Fld>
       </div>
+      <Fld label="Этап разбора лида"><select value={form.leadStage||"new"} onChange={e=>set("leadStage",e.target.value)}>{LEAD_STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></Fld>
       <Fld label="Менеджер"><select value={form.managerId} onChange={e=>set("managerId",e.target.value)}>{managers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></Fld>
-      <Fld label="Теги (через запятую)"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="VIP, Тендер"/></Fld>
+      <Fld label="Интересы / теги (через запятую)" hint="Например: рассрочка, бассейн, сервис, отложенный спрос"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="рассрочка, бассейн, встреча"/></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:6}}>
         <Btn onClick={onClose}>Отмена</Btn>
-        <Btn primary onClick={()=>{if(!form.name||!form.phone)return;onSave({...form,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});}}> Сохранить</Btn>
+        <Btn primary onClick={saveContact}>Сохранить</Btn>
       </div>
     </div>
   </Modal>;
 }
 
-function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit}){
+function ProductModal({initial,onSave,onClose}){
+  const blank={name:"",sku:"",category:"Товары",unit:"шт",stock:0,reserved:0,price:"",cost:"",tags:""};
+  const [form,setForm]=useState(initial?{...initial,tags:initial.tags?.join(", ")||""}:{...blank});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return <Modal title={initial?"Редактировать товар":"Новый товар"} onClose={onClose} width={470}>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Fld label="Название *"><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Название товара"/></Fld>
+      <Fld label="Артикул *"><input value={form.sku} onChange={e=>set("sku",e.target.value)} placeholder="SKU-001"/></Fld>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Fld label="Категория"><input value={form.category} onChange={e=>set("category",e.target.value)} placeholder="Оборудование"/></Fld>
+        <Fld label="Ед. изм."><input value={form.unit} onChange={e=>set("unit",e.target.value)} placeholder="шт"/></Fld>
+        <Fld label="Остаток"><input type="number" value={form.stock} onChange={e=>set("stock",e.target.value)} placeholder="0"/></Fld>
+        <Fld label="Резерв"><input type="number" value={form.reserved} onChange={e=>set("reserved",e.target.value)} placeholder="0"/></Fld>
+        <Fld label="Цена продажи"><input type="number" value={form.price} onChange={e=>set("price",e.target.value)} placeholder="0"/></Fld>
+        <Fld label="Себестоимость"><input type="number" value={form.cost} onChange={e=>set("cost",e.target.value)} placeholder="0"/></Fld>
+      </div>
+      <Fld label="Теги"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="склад, товар, оборудование"/></Fld>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:6}}>
+        <Btn onClick={onClose}>Отмена</Btn>
+        <Btn primary onClick={()=>{if(!form.name||!form.sku)return;onSave({...form,stock:parseInt(form.stock)||0,reserved:parseInt(form.reserved)||0,price:parseInt(form.price)||0,cost:parseInt(form.cost)||0,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});}}>Сохранить</Btn>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function WarehouseDocumentModal({contacts,onSave,onClose}){
+  const [form,setForm]=useState({type:"Товарная накладная",number:"",contactId:contacts[0]?.id||"",amount:"",status:"Подготовлен"});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return <Modal title="Новый документ склада" onClose={onClose} width={440}>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Fld label="Тип документа"><select value={form.type} onChange={e=>set("type",e.target.value)}><option>Товарная накладная</option><option>Счет на оплату</option><option>Акт</option><option>Поступление</option><option>Возврат</option></select></Fld>
+      <Fld label="Номер"><input value={form.number} onChange={e=>set("number",e.target.value)} placeholder="DOC-0001"/></Fld>
+      <Fld label="Контрагент"><select value={form.contactId} onChange={e=>set("contactId",e.target.value)}>{contacts.map(c=><option key={c.id} value={c.id}>{c.company||c.name}</option>)}</select></Fld>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Fld label="Сумма"><input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)} placeholder="0"/></Fld>
+        <Fld label="Статус"><select value={form.status} onChange={e=>set("status",e.target.value)}><option>Подготовлен</option><option>Отправлен</option><option>Проведен</option><option>Оплачен</option></select></Fld>
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:6}}>
+        <Btn onClick={onClose}>Отмена</Btn>
+        <Btn primary onClick={()=>onSave({...form,number:form.number||`DOC-${uid().toUpperCase()}`,amount:parseInt(form.amount)||0})}>Сохранить</Btn>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit,onStageChange,mobile=false}){
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("all");
   const [siteF,setSiteF]=useState("all");
   const [mgrF,setMgrF]=useState("all");
+  const [tagF,setTagF]=useState("all");
+  const [view,setView]=useState("funnel");
+  const [pipeline,setPipeline]=useState("primary");
   const [sel,setSel]=useState(null);
+  const tags=[...new Set(contacts.flatMap(c=>c.tags||[]))];
   const filtered=contacts.filter(c=>{
     const q=search.toLowerCase();
-    return(!q||c.name.toLowerCase().includes(q)||c.phone?.includes(q)||(c.company||"").toLowerCase().includes(q))&&(statusF==="all"||c.status===statusF)&&(siteF==="all"||c.siteId===siteF)&&(mgrF==="all"||c.managerId===mgrF);
+    return(!q||c.name.toLowerCase().includes(q)||c.phone?.includes(q)||(c.company||"").toLowerCase().includes(q))&&(statusF==="all"||c.status===statusF)&&(siteF==="all"||c.siteId===siteF)&&(mgrF==="all"||c.managerId===mgrF)&&(tagF==="all"||(c.tags||[]).includes(tagF));
   });
   const selC=sel?contacts.find(c=>c.id===sel):null;
   const selCalls=selC?calls.filter(c=>c.contactId===selC.id):[];
   const selMsgs=selC?messages.filter(m=>m.contactId===selC.id):[];
   const chs=[...new Set(selMsgs.map(m=>m.channel))];
   const stMap={client:[C.green,"Клиент"],lead:[C.accent,"Лид"],lost:[C.muted,"Потерян"]};
-  return <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",borderRight:`1px solid ${C.border}`}}>
+  const getSite=id=>sites.find(s=>s.id===id);
+  const getMgr=id=>managers.find(m=>m.id===id);
+  const moveLead=(id,stage)=>onStageChange?.(id,stage);
+  const pipelines=[["primary","Первичная обработка"],["production","Производство"],["service","Сервисное обслуживание"],["deferred","Отложенный спрос"],["refused","Отказы"]];
+  const visibleStages=pipeline==="deferred"?LEAD_STAGES.filter(s=>s.id==="deferred"):pipeline==="refused"?LEAD_STAGES.filter(s=>s.id==="refused"):pipeline==="service"?LEAD_STAGES.filter(s=>["qualified","meeting","client"].includes(s.id)):LEAD_STAGES;
+  const leadCard=(c)=>{
+    const stage=leadStageOf(c);
+    const stageIndex=LEAD_STAGES.findIndex(s=>s.id===stage);
+    const site=getSite(c.siteId);
+    const mgr=getMgr(c.managerId);
+    return <div key={c.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:9,padding:10,display:"flex",flexDirection:"column",gap:7}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+        <button onClick={()=>setSel(c.id)} style={{background:"transparent",color:C.teal,textAlign:"left",fontWeight:700,lineHeight:1.3,flex:1}}>{c.name}</button>
+        <span className="mono" style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtDate(c.createdAt)}</span>
+      </div>
+      <div style={{fontSize:12,color:C.muted,lineHeight:1.45}}>{c.company||c.phone||"Без компании"}</div>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {site&&<SiteBadge siteId={c.siteId} sites={sites}/>}
+        {mgr&&<MgrBadge managerId={c.managerId} managers={managers}/>}
+        {c.tags?.map(t=><Badge key={t} label={t} color={t.toLowerCase().includes("расср")?C.amber:t.toLowerCase().includes("отказ")?C.red:C.purple} small/>)}
+      </div>
+      <select value={stage} onChange={e=>moveLead(c.id,e.target.value)} style={{fontSize:12}}>
+        {LEAD_STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+      </select>
+      <div style={{display:"flex",gap:4}}>
+        {stageIndex>0&&<Btn small onClick={()=>moveLead(c.id,LEAD_STAGES[stageIndex-1].id)}>←</Btn>}
+        {stageIndex<LEAD_STAGES.length-1&&<Btn small primary onClick={()=>moveLead(c.id,LEAD_STAGES[stageIndex+1].id)}>→</Btn>}
+        <Btn small onClick={()=>onEdit(c)} style={{marginLeft:"auto"}}>✎</Btn>
+      </div>
+    </div>;
+  };
+  return <div style={{display:"flex",flexDirection:mobile?"column":"row",flex:1,overflow:"hidden"}}>
+    <div style={{flex:mobile?"0 0 360px":1,display:"flex",flexDirection:"column",overflow:"hidden",borderRight:mobile?"none":`1px solid ${C.border}`,borderBottom:mobile?`1px solid ${C.border}`:"none"}}>
       <div style={{padding:10,borderBottom:`1px solid ${C.border}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Поиск..." style={{flex:1,minWidth:100}}/>
         <select value={statusF} onChange={e=>setStatusF(e.target.value)} style={{fontSize:12,width:105}}>
@@ -813,15 +1103,42 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit}){
         <select value={mgrF} onChange={e=>setMgrF(e.target.value)} style={{fontSize:12,width:115}}>
           <option value="all">Все менеджеры</option>{managers.map(m=><option key={m.id} value={m.id}>{m.name.split(" ")[0]}</option>)}
         </select>
+        <select value={tagF} onChange={e=>setTagF(e.target.value)} style={{fontSize:12,width:105}}>
+          <option value="all">Все интересы</option>{tags.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={pipeline} onChange={e=>setPipeline(e.target.value)} style={{fontSize:12,width:170}}>
+          {pipelines.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+        </select>
+        <div style={{display:"inline-flex",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
+          {[["funnel","Воронка"],["list","Список"]].map(([id,label])=><button key={id} onClick={()=>setView(id)} style={{padding:"6px 10px",background:view===id?C.accentDim:C.surface,color:view===id?C.accent:C.text,border:"none",borderRadius:0,fontSize:12,fontWeight:view===id?700:500}}>{label}</button>)}
+        </div>
         <Btn primary small onClick={onAdd}>+ Контакт</Btn>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:5}}>
+      {view==="funnel"?<div style={{flex:1,overflowX:"auto",overflowY:"hidden",padding:10}}>
+        <div style={{display:"flex",gap:10,alignItems:"stretch",minWidth:mobile?visibleStages.length*250:visibleStages.length*255,height:"100%"}}>
+          {visibleStages.map((st,i)=>{
+            const col=filtered.filter(c=>leadStageOf(c)===st.id);
+            const colColor=[C.accent,C.teal,C.green,C.amber,C.purple,C.red,C.green][i]||C.accent;
+            return <div key={st.id} style={{flex:"0 0 245px",background:C.surface,border:`1px solid ${colColor}55`,borderRadius:12,display:"flex",flexDirection:"column",maxHeight:"100%"}}>
+              <div style={{padding:"10px 12px",borderBottom:`2px solid ${colColor}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                <div><div style={{fontSize:12,fontWeight:800,textTransform:"uppercase"}}>{st.label}</div><div style={{fontSize:11,color:C.muted}}>лидов: {col.length}</div></div>
+                <Badge label={col.length} color={colColor} small/>
+              </div>
+              <div style={{padding:8,overflowY:"auto",display:"flex",flexDirection:"column",gap:7}}>
+                {col.map(leadCard)}
+                {col.length===0&&<div style={{padding:16,textAlign:"center",fontSize:12,color:C.muted,border:`1px dashed ${C.border}`,borderRadius:9}}>Пусто</div>}
+              </div>
+            </div>;
+          })}
+        </div>
+      </div>:<div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:5}}>
         {filtered.length===0&&<div style={{color:C.muted,textAlign:"center",marginTop:40}}>Нет контактов</div>}
         {filtered.map(c=>{
           const isSel=c.id===sel;
           const cChs=[...new Set(messages.filter(m=>m.contactId===c.id).map(m=>m.channel))];
           const unread=messages.filter(m=>m.contactId===c.id&&m.incoming&&!m.read).length;
           const[stCol,stLabel]=stMap[c.status]||[C.muted,c.status];
+          const leadStage=LEAD_STAGES.find(s=>s.id===leadStageOf(c));
           return <div key={c.id} onClick={()=>setSel(c.id===sel?null:c.id)} className="ani"
             style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:9,border:`1px solid ${isSel?C.accent:C.border}`,background:isSel?C.accentDim+"30":C.card,cursor:"pointer",transition:"all .12s"}}>
             <Avatar name={c.name} size={34}/>
@@ -831,15 +1148,17 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit}){
             </div>
             <div style={{display:"flex",gap:3}}>{cChs.map(ch=><ChIcon key={ch} ch={ch} size={14}/>)}</div>
             {unread>0&&<Badge label={unread} color={C.accent} small/>}
+            {c.tags?.slice(0,2).map(t=><Badge key={t} label={t} color={C.amber} small/>)}
             <SiteBadge siteId={c.siteId} sites={sites}/>
             <Badge label={stLabel} color={stCol} small/>
+            {leadStage&&<Badge label={leadStage.short} color={C.teal} small/>}
             <MgrBadge managerId={c.managerId} managers={managers}/>
             <Btn small onClick={e=>{e.stopPropagation();onEdit(c);}}>✎</Btn>
           </div>;
         })}
-      </div>
+      </div>}
     </div>
-    <div style={{width:285,overflowY:"auto",background:C.surface}}>
+    <div style={{width:mobile?"100%":285,flex:mobile?1:"0 0 285px",overflowY:"auto",background:C.surface}}>
       {!selC?<div style={{padding:40,textAlign:"center",color:C.muted}}><div style={{fontSize:32,opacity:.2}}>◈</div>Выбери контакт</div>
       :<div className="ani" style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -882,7 +1201,7 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit}){
 
 // ── Deals ─────────────────────────────────────────────────────────────────────
 function DealModal({contacts,managers,sites,initialStage,onSave,onClose}){
-  const [form,setForm]=useState({title:"",contactId:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||"",amount:"",stage:initialStage||STAGES[0]});
+  const [form,setForm]=useState({title:"",contactId:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||"",amount:"",stage:initialStage||STAGES[0],tags:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   return <Modal title="Новая сделка" onClose={onClose} width={420}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -896,9 +1215,10 @@ function DealModal({contacts,managers,sites,initialStage,onSave,onClose}){
         <Fld label="Сумма (₽)"><input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)} placeholder="0"/></Fld>
       </div>
       <Fld label="Этап"><select value={form.stage} onChange={e=>set("stage",e.target.value)}>{STAGES.map(s=><option key={s} value={s}>{s}</option>)}</select></Fld>
+      <Fld label="Теги"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="срочно, склад, VIP"/></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn onClick={onClose}>Отмена</Btn>
-        <Btn primary onClick={()=>{if(!form.title)return;onSave({...form,amount:parseInt(form.amount)||0});}}>Сохранить</Btn>
+        <Btn primary onClick={()=>{if(!form.title)return;onSave({...form,amount:parseInt(form.amount)||0,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});}}>Сохранить</Btn>
       </div>
     </div>
   </Modal>;
@@ -906,12 +1226,17 @@ function DealModal({contacts,managers,sites,initialStage,onSave,onClose}){
 
 function Deals({deals,contacts,managers,sites,onAdd,onMove,onDelete}){
   const [siteF,setSiteF]=useState("all");
-  const filtered=deals.filter(d=>siteF==="all"||d.siteId===siteF);
+  const [tagF,setTagF]=useState("all");
+  const tags=[...new Set(deals.flatMap(d=>d.tags||[]))];
+  const filtered=deals.filter(d=>(siteF==="all"||d.siteId===siteF)&&(tagF==="all"||(d.tags||[]).includes(tagF)));
   const pipeline=filtered.filter(d=>d.stage!=="Закрыт").reduce((s,d)=>s+d.amount,0);
   return <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
     <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}>
       <select value={siteF} onChange={e=>setSiteF(e.target.value)} style={{fontSize:12,width:140}}>
         <option value="all">Все сайты</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <select value={tagF} onChange={e=>setTagF(e.target.value)} style={{fontSize:12,width:130}}>
+        <option value="all">Все теги</option>{tags.map(t=><option key={t} value={t}>{t}</option>)}
       </select>
       <div style={{fontSize:12,color:C.muted}}>{filtered.length} сделок · <span style={{color:C.green}}>{pipeline.toLocaleString()} ₽ в воронке</span></div>
       <div style={{flex:1}}/>
@@ -940,8 +1265,9 @@ function Deals({deals,contacts,managers,sites,onAdd,onMove,onDelete}){
                   <div style={{fontWeight:500,fontSize:12,marginBottom:4}}>{d.title}</div>
                   {ct&&<div style={{fontSize:11,color:C.muted,marginBottom:3}}>{ct.name}</div>}
                   {site&&<SiteBadge siteId={d.siteId} sites={sites}/>}
-                  {d.amount>0&&<div style={{fontSize:13,color:C.green,fontWeight:600,margin:"6px 0"}}>{d.amount.toLocaleString()} ₽</div>}
+                  {d.amount>0&&<div style={{fontSize:13,color:C.green,fontWeight:600,margin:"6px 0"}}>{(d.amount||0).toLocaleString()} ₽</div>}
                   <div style={{marginBottom:6}}><MgrBadge managerId={d.managerId} managers={managers}/></div>
+                  {d.tags?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{d.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}
                   <div style={{display:"flex",gap:4}}>
                     {si>0&&<Btn small onClick={()=>onMove(d.id,STAGES[si-1])}>←</Btn>}
                     {si<STAGES.length-1&&<Btn small primary onClick={()=>onMove(d.id,STAGES[si+1])}>→</Btn>}
@@ -955,6 +1281,321 @@ function Deals({deals,contacts,managers,sites,onAdd,onMove,onDelete}){
         })}
       </div>
     </div>
+  </div>;
+}
+
+// ── Warehouse ─────────────────────────────────────────────────────────────────
+function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions=[],contacts,setContacts,managers,sites,currentManager,onCreateDeal,documents,setDocuments,onCreateDocument,contracts,setContracts,deals,onAddClient,onAddLead,onAddSource,onAddProduct,onAddDocument,onAddTask,mobile=false}){
+  const [section,setSection]=useState("indicators");
+  const [query,setQuery]=useState("");
+  const [category,setCategory]=useState("all");
+  const [tagFilter,setTagFilter]=useState("all");
+  const [cart,setCart]=useState([]);
+  const [contactId,setContactId]=useState(contacts[0]?.id||"");
+  const [newContact,setNewContact]=useState("");
+  const [siteId,setSiteId]=useState(sites[0]?.id||"");
+  const [stage,setStage]=useState("Новый");
+  const [dealTitle,setDealTitle]=useState("");
+  const [receipt,setReceipt]=useState({productId:products[0]?.id||"",qty:1,cost:"",supplierId:contacts[0]?.id||"",number:""});
+  const [model,setModel]=useState({name:"",sku:"",category:"Товары",unit:"шт",price:"",cost:"",stock:0,tags:""});
+  const [contract,setContract]=useState({contactId:contacts[0]?.id||"",number:"",subject:"",amount:"",status:"Действует"});
+  const categories=["all",...new Set(products.map(p=>p.category))];
+  const productTags=[...new Set(products.flatMap(p=>p.tags||[]))];
+  const filtered=products.filter(p=>{
+    const q=query.toLowerCase();
+    return(category==="all"||p.category===category)&&(tagFilter==="all"||(p.tags||[]).includes(tagFilter))&&(!q||p.name.toLowerCase().includes(q)||p.sku.toLowerCase().includes(q)||(p.tags||[]).some(t=>t.toLowerCase().includes(q)));
+  });
+  const filteredPositions=positions.filter(p=>{
+    const q=query.toLowerCase();
+    return(category==="all"||p.category===category)&&(tagFilter==="all"||p.status===tagFilter||p.category===tagFilter)&&(!q||[p.name,p.serial,p.status,p.contactName,p.phone,p.place,p.source,p.manager,p.notes].some(v=>(v||"").toString().toLowerCase().includes(q)));
+  });
+  const total=cart.reduce((sum,row)=>sum+row.qty*row.price,0);
+  const reserve=products.reduce((sum,p)=>sum+(p.reserved||0)*p.price,0);
+  const stockSum=products.reduce((sum,p)=>sum+(p.stock||0)*p.cost,0);
+  const getProduct=id=>products.find(p=>p.id===id);
+  const getContact=id=>contacts.find(c=>c.id===id);
+  const available=p=>Math.max(0,(p.stock||0)-(p.reserved||0));
+  const docNo=prefix=>`${prefix}-${String(documents.length+1).padStart(4,"0")}`;
+  const addToCart=p=>{
+    if(available(p)<=0)return;
+    setCart(rows=>{
+      const existing=rows.find(row=>row.productId===p.id);
+      if(existing)return rows.map(row=>row.productId===p.id?{...row,qty:Math.min(row.qty+1,available(p))}:row);
+      return[...rows,{productId:p.id,qty:1,price:p.price}];
+    });
+  };
+  const updateQty=(productId,qty)=>{
+    const p=getProduct(productId);
+    const next=Math.max(1,Math.min(parseInt(qty)||1,available(p)));
+    setCart(rows=>rows.map(row=>row.productId===productId?{...row,qty:next}:row));
+  };
+  const createDeal=async()=>{
+    if(cart.length===0)return;
+    let finalContactId=contactId;
+    if(!finalContactId&&newContact.trim()){
+      finalContactId=uid();
+      setContacts(prev=>[{id:finalContactId,name:newContact.trim(),phone:"",email:"",company:"",status:"lead",leadStage:"new",tags:["Склад"],managerId:currentManager?.id||managers[0]?.id,siteId,createdAt:Date.now()},...prev]);
+    }
+    if(!finalContactId)return;
+    const lines=cart.map(row=>({...row,name:getProduct(row.productId)?.name||"Товар",sku:getProduct(row.productId)?.sku||""}));
+    const title=dealTitle.trim()||`Заказ · ${contacts.find(c=>c.id===finalContactId)?.name||newContact.trim()}`;
+    onCreateDeal({title,contactId:finalContactId,managerId:currentManager?.id||managers[0]?.id,siteId,amount:total,stage,items:lines,createdAt:Date.now()});
+    await onCreateDocument?.({type:"Товарная накладная",number:docNo("TORG-12"),contactId:finalContactId,amount:total,status:"Подготовлен",items:lines,createdAt:Date.now()});
+    await onCreateDocument?.({type:"Счет на оплату",number:docNo("INV"),contactId:finalContactId,amount:total,status:"Подготовлен",items:lines,createdAt:Date.now()});
+    const nextProducts=products.map(p=>{
+      const row=cart.find(x=>x.productId===p.id);
+      return row?{...p,stock:Math.max(0,p.stock-row.qty)}:p;
+    });
+    setProducts(nextProducts);
+    cart.forEach(row=>{const initial=products.find(p=>p.id===row.productId);const next=nextProducts.find(p=>p.id===row.productId);if(initial&&next)onSaveProduct?.(initial,next);});
+    setCart([]);
+    setDealTitle("");
+    setNewContact("");
+    setSection("documents");
+  };
+  const receiveStock=()=>{
+    const qty=parseInt(receipt.qty)||0;
+    if(!receipt.productId||qty<=0)return;
+    const cost=parseInt(receipt.cost)||getProduct(receipt.productId)?.cost||0;
+    const initial=getProduct(receipt.productId);
+    const next={...initial,stock:(initial?.stock||0)+qty,cost};
+    setProducts(prev=>prev.map(p=>p.id===receipt.productId?next:p));
+    onSaveProduct?.(initial,next);
+    onCreateDocument?.({type:"Поступление",number:receipt.number||docNo("RCPT"),contactId:receipt.supplierId,amount:qty*cost,status:"Проведен",items:[{productId:receipt.productId,qty,price:cost,name:getProduct(receipt.productId)?.name}],createdAt:Date.now()});
+    setReceipt(r=>({...r,qty:1,cost:"",number:""}));
+  };
+  const addModel=()=>{
+    if(!model.name||!model.sku)return;
+    onCreateProduct?.({sku:model.sku,name:model.name,category:model.category||"Товары",unit:model.unit||"шт",stock:parseInt(model.stock)||0,reserved:0,price:parseInt(model.price)||0,cost:parseInt(model.cost)||0,tags:model.tags?model.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});
+    setModel({name:"",sku:"",category:"Товары",unit:"шт",price:"",cost:"",stock:0,tags:""});
+    setSection("stock");
+  };
+  const addContract=()=>{
+    if(!contract.contactId||!contract.number||!contract.subject)return;
+    setContracts(prev=>[{id:uid(),...contract,amount:parseInt(contract.amount)||0,validTo:Date.now()+86400000*365},...prev]);
+    setContract(c=>({...c,number:"",subject:"",amount:""}));
+  };
+  const tabs=[["indicators","Обзор"],["positions","Позиции"],["stock","Товары"],["sales","Продажа"],["receipts","Поступление"],["documents","Документы"],["contractors","Контрагенты"],["contracts","Договоры"],["models","Номенклатура"]];
+  const invoiceDocs=documents.filter(d=>d.type==="Счет на оплату");
+  const lowStock=products.filter(p=>available(p)<=3);
+  const pipelineSum=deals.reduce((s,d)=>s+(d.amount||0),0);
+  const panel={background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:14};
+  const row={background:C.card,border:`1px solid ${C.border}`,borderRadius:9,padding:10};
+  const showFilters=["positions","stock","sales","models"].includes(section);
+
+  return <div style={{padding:mobile?10:16,flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:mobile?10:14,background:C.bg,minWidth:0}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:16,fontWeight:700}}>Склад и продажи</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:2}}>Товары, поступления, документы, договоры и сделки</div>
+      </div>
+      <QuickCreateBar
+        features={{contacts:true,warehouse:true,sites:true,deals:true,tasks:!!onAddTask}}
+        onClient={onAddClient}
+        onLead={onAddLead}
+        onProduct={onAddProduct}
+        onSource={onAddSource}
+        onDeal={()=>setSection("sales")}
+        onTask={onAddTask}
+        onDocument={onAddDocument}
+        mobile={mobile}
+      />
+    </div>
+
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:mobile?"nowrap":"wrap",overflowX:mobile?"auto":"visible",paddingBottom:mobile?2:0,minHeight:mobile?34:"auto"}}>
+      {tabs.map(([id,label])=><button key={id} onClick={()=>setSection(id)} style={{background:section===id?C.accentDim:C.surface,color:section===id?C.accent:C.text,border:`1px solid ${section===id?C.accent+"66":C.border}`,borderRadius:8,padding:"7px 11px",fontSize:12,flex:"0 0 auto",display:"inline-flex",alignItems:"center",justifyContent:"center",minHeight:32,whiteSpace:"nowrap"}}>{label}</button>)}
+      <div style={{flex:1}}/>
+      <Btn small onClick={()=>setSection("receipts")}>+ Поступление</Btn>
+      <Btn small onClick={()=>setSection("contracts")}>+ Договор</Btn>
+    </div>
+
+    {showFilters&&<div style={{display:"flex",gap:8,flexWrap:"wrap",...panel,padding:10}}>
+      <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск товара, артикула или тега" style={{flex:mobile?"1 1 100%":"1 1 220px",maxWidth:mobile?"none":260}}/>
+      <select value={category} onChange={e=>setCategory(e.target.value)} style={{width:mobile?"100%":170}}>{categories.map(c=><option key={c} value={c}>{c==="all"?"Все категории":c}</option>)}</select>
+      <select value={tagFilter} onChange={e=>setTagFilter(e.target.value)} style={{width:mobile?"100%":170}}><option value="all">Все теги товаров</option>{productTags.map(t=><option key={t} value={t}>{t}</option>)}</select>
+      <div style={{flex:1}}/>
+      <Btn primary small onClick={onAddProduct}>+ Товар</Btn>
+    </div>}
+
+    {section==="indicators"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
+      {[
+        ["Позиций",positions.length||products.length,C.accent],
+        ["Моделей",products.length,C.teal],
+        ["Остаток склада",`${stockSum.toLocaleString()} ₽`,C.green],
+        ["В резерве",`${reserve.toLocaleString()} ₽`,C.amber],
+        ["Сделки",`${pipelineSum.toLocaleString()} ₽`,C.purple],
+      ].map(([label,value,color])=><div key={label} style={panel}><div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".06em"}}>{label}</div><div style={{fontSize:24,fontWeight:700,color,marginTop:8}}>{value}</div></div>)}
+      <div style={{...panel,gridColumn:mobile?"auto":"span 2"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><b>Последние документы</b><Btn small onClick={onAddDocument}>+ Документ</Btn></div>
+        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+          {documents.slice(0,5).map(d=><div key={d.id} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 120px 110px",gap:10,alignItems:"center"}}>
+            <div><div style={{fontWeight:600}}>{d.type}</div><div className="mono" style={{color:C.muted}}>{d.number} · {getContact(d.contactId)?.company||getContact(d.contactId)?.name||"—"}</div></div>
+            <div style={{fontWeight:700}}>{(d.amount||0).toLocaleString()} ₽</div>
+            <Badge label={d.status} color={d.status==="Проведен"?C.green:C.accent}/>
+          </div>)}
+        </div>
+      </div>
+      <div style={{...panel,gridColumn:mobile?"auto":"span 2"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><b>Требуют внимания</b><Badge label={`${lowStock.length} позиций`} color={lowStock.length?C.amber:C.green}/></div>
+        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+          {(lowStock.length?lowStock:products.slice(0,4)).map(p=><div key={p.id} style={{...row,display:"flex",alignItems:"center",gap:10,flexWrap:mobile?"wrap":"nowrap"}}>
+            <div style={{flex:1}}><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted}}>{p.sku} · {p.category}</div></div>
+            <Badge label={`${available(p)} доступно`} color={available(p)>3?C.green:C.amber}/>
+          </div>)}
+        </div>
+      </div>
+      <div style={{...panel,gridColumn:mobile?"auto":"span 2"}}>
+        <div style={{fontWeight:600,marginBottom:10}}>Просроченные счета</div>
+        <div style={{display:"flex",gap:22,alignItems:"end"}}><div><div style={{fontSize:28,color:C.amber,fontWeight:700}}>{invoiceDocs.length}</div><div style={{fontSize:11,color:C.muted}}>счетов</div></div><div><div style={{fontSize:28,fontWeight:700}}>{invoiceDocs.reduce((s,d)=>s+d.amount,0).toLocaleString()} ₽</div><div style={{fontSize:11,color:C.muted}}>к оплате</div></div></div>
+      </div>
+      <div style={{...panel,gridColumn:mobile?"auto":"span 2"}}>
+        <div style={{fontWeight:600,marginBottom:10}}>Быстрые операции</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn primary small onClick={()=>setSection("sales")}>+ Продажа</Btn>
+          <Btn small onClick={()=>setSection("receipts")}>+ Поступление</Btn>
+          <Btn small onClick={onAddClient}>+ Клиент</Btn>
+          <Btn small onClick={onAddSource}>+ Источник</Btn>
+        </div>
+      </div>
+    </div>}
+
+    {section==="positions"&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+        {["На складе","В заказе","В пути","В резерве","Продано"].map(st=><div key={st} style={panel}>
+          <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:".06em"}}>{st}</div>
+          <div style={{fontSize:22,fontWeight:700,color:st==="Продано"?C.amber:st==="На складе"?C.green:C.accent,marginTop:4}}>{positions.filter(p=>p.status===st).length}</div>
+        </div>)}
+      </div>
+      {filteredPositions.map(p=><div key={p.id} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr":"130px 1fr 135px 145px 120px 120px",gap:8,alignItems:"center"}}>
+        <Badge label={p.status} color={p.status==="Продано"?C.amber:p.status==="На складе"?C.green:p.status==="В резерве"?C.red:C.accent}/>
+        <div style={{minWidth:0}}>
+          <div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+          <div className="mono" style={{color:C.muted}}>{p.serial||"без идентификатора"} · {p.category}</div>
+          {p.notes&&<div style={{fontSize:11,color:C.muted,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
+        </div>
+        <div><div style={{fontWeight:700}}>{(p.price||0).toLocaleString()} ₽</div><div style={{fontSize:11,color:C.muted}}>остаток {(p.balance||0).toLocaleString()} ₽</div></div>
+        <div style={{fontSize:12}}>{p.contactName||"—"}<div className="mono" style={{color:C.muted}}>{p.phone||""}</div></div>
+        <div style={{fontSize:12,color:C.muted}}>{p.place||"—"}</div>
+        <div style={{fontSize:12,color:C.muted}}>{p.source||"—"}<br/>{p.manager||""}</div>
+      </div>)}
+      {filteredPositions.length===0&&<div style={{...panel,color:C.muted,textAlign:"center"}}>Позиции не найдены</div>}
+    </div>}
+
+    {section==="stock"&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {filtered.map(p=><div key={p.id} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 95px 95px 120px 120px 110px",gap:8,alignItems:"center"}}>
+        <div><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted}}>{p.sku} · {p.category}</div>{p.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{p.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}</div>
+        <Badge label={`${p.stock} ${p.unit}`} color={available(p)>0?C.green:C.red}/>
+        <Badge label={`Резерв ${p.reserved||0}`} color={C.amber}/>
+        <div style={{fontSize:12,color:C.muted}}>{(p.cost||0).toLocaleString()} ₽ себ.</div>
+        <div style={{fontWeight:700}}>{(p.price||0).toLocaleString()} ₽</div>
+        <Btn small onClick={()=>{addToCart(p);setSection("sales");}} disabled={available(p)<=0}>+ В продажу</Btn>
+      </div>)}
+    </div>}
+
+    {section==="receipts"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"minmax(280px,360px) 1fr",gap:14}}>
+      <div style={{...panel,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{fontWeight:600}}>Поступление товара</div>
+        <Fld label="Товар"><select value={receipt.productId} onChange={e=>setReceipt(r=>({...r,productId:e.target.value}))}>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></Fld>
+        <Fld label="Поставщик"><select value={receipt.supplierId} onChange={e=>setReceipt(r=>({...r,supplierId:e.target.value}))}>{contacts.map(c=><option key={c.id} value={c.id}>{c.company||c.name}</option>)}</select></Fld>
+        <Fld label="Номер документа"><input value={receipt.number} onChange={e=>setReceipt(r=>({...r,number:e.target.value}))} placeholder="Приходная накладная"/></Fld>
+        <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 1fr",gap:10}}>
+          <Fld label="Количество"><input type="number" value={receipt.qty} onChange={e=>setReceipt(r=>({...r,qty:e.target.value}))}/></Fld>
+          <Fld label="Себестоимость"><input type="number" value={receipt.cost} onChange={e=>setReceipt(r=>({...r,cost:e.target.value}))}/></Fld>
+        </div>
+        <Btn primary onClick={receiveStock}>Провести поступление</Btn>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{documents.filter(d=>d.type==="Поступление").map(d=><div key={d.id} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 140px 130px",gap:10,alignItems:"center"}}><div><div style={{fontWeight:600}}>{d.number}</div><div style={{fontSize:12,color:C.muted}}>{getContact(d.contactId)?.company||getContact(d.contactId)?.name} · {fmt(d.createdAt)}</div></div><div>{(d.amount||0).toLocaleString()} ₽</div><Badge label={d.status} color={C.green}/></div>)}</div>
+    </div>}
+
+    {section==="models"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"minmax(280px,380px) 1fr",gap:14}}>
+      <div style={{...panel,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{fontWeight:600}}>Новая номенклатура</div>
+        <Fld label="Название"><input value={model.name} onChange={e=>setModel(m=>({...m,name:e.target.value}))}/></Fld>
+        <Fld label="Артикул"><input value={model.sku} onChange={e=>setModel(m=>({...m,sku:e.target.value}))}/></Fld>
+        <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 1fr",gap:10}}>
+          <Fld label="Категория"><input value={model.category} onChange={e=>setModel(m=>({...m,category:e.target.value}))}/></Fld>
+          <Fld label="Ед. изм."><input value={model.unit} onChange={e=>setModel(m=>({...m,unit:e.target.value}))}/></Fld>
+          <Fld label="Цена продажи"><input type="number" value={model.price} onChange={e=>setModel(m=>({...m,price:e.target.value}))}/></Fld>
+          <Fld label="Себестоимость"><input type="number" value={model.cost} onChange={e=>setModel(m=>({...m,cost:e.target.value}))}/></Fld>
+        </div>
+        <Fld label="Теги товара"><input value={model.tags} onChange={e=>setModel(m=>({...m,tags:e.target.value}))} placeholder="склад, max, оборудование"/></Fld>
+        <Btn primary onClick={addModel}>Добавить номенклатуру</Btn>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fill,minmax(230px,1fr))",gap:8}}>{products.map(p=><div key={p.id} style={row}><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted,marginTop:3}}>{p.sku} · {p.category} · {p.unit}</div>{p.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:7,flexWrap:"wrap"}}>{p.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}</div>)}</div>
+    </div>}
+
+    {section==="sales"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"minmax(300px,1fr) minmax(320px,420px)",gap:14}}>
+      <div style={{...panel,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{fontWeight:600}}>Товары для продажи</div>
+        {filtered.map(p=><div key={p.id} style={{...row,display:"flex",alignItems:"center",gap:10,flexWrap:mobile?"wrap":"nowrap"}}>
+          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div><div className="mono" style={{color:C.muted}}>{p.sku} · доступно {available(p)} {p.unit}</div></div>
+          <div style={{fontWeight:700}}>{(p.price||0).toLocaleString()} ₽</div>
+          <Btn small onClick={()=>addToCart(p)} disabled={available(p)<=0}>+</Btn>
+        </div>)}
+      </div>
+      <div style={{...panel,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{fontWeight:600}}>Оформление сделки</div>
+        {cart.length===0&&<div style={{height:100,border:`1px dashed ${C.border}`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:C.muted}}>Корзина пуста</div>}
+        {cart.map(rowItem=>{
+          const p=getProduct(rowItem.productId);
+          return <div key={rowItem.productId} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr 70px 92px 30px":"1fr 76px 95px 30px",gap:8,alignItems:"center"}}>
+            <div style={{minWidth:0}}><div style={{fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p?.name}</div><div className="mono" style={{color:C.muted}}>{p?.sku}</div></div>
+            <input type="number" min={1} max={available(p)} value={rowItem.qty} onChange={e=>updateQty(rowItem.productId,e.target.value)}/>
+            <div style={{textAlign:"right",fontWeight:700}}>{(rowItem.qty*rowItem.price).toLocaleString()} ₽</div>
+            <Btn small danger onClick={()=>setCart(rows=>rows.filter(x=>x.productId!==rowItem.productId))}>×</Btn>
+          </div>;
+        })}
+        <Fld label="Клиент">
+          <select value={contactId} onChange={e=>setContactId(e.target.value)}>
+            <option value="">+ Новый клиент ниже</option>
+            {contacts.map(c=><option key={c.id} value={c.id}>{c.name} · {c.company||c.phone||"без компании"}</option>)}
+          </select>
+        </Fld>
+        <Fld label="Новый клиент"><input value={newContact} onChange={e=>setNewContact(e.target.value)} placeholder="Название или имя"/></Fld>
+        <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 1fr",gap:8}}>
+          <Fld label="Источник"><select value={siteId} onChange={e=>setSiteId(e.target.value)}>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Fld>
+          <Fld label="Этап"><select value={stage} onChange={e=>setStage(e.target.value)}>{STAGES.map(s=><option key={s} value={s}>{s}</option>)}</select></Fld>
+        </div>
+        <Fld label="Название сделки"><input value={dealTitle} onChange={e=>setDealTitle(e.target.value)} placeholder="Заказ по складу"/></Fld>
+        <div style={{display:"flex",alignItems:mobile?"stretch":"center",justifyContent:"space-between",gap:10,flexDirection:mobile?"column":"row"}}>
+          <div style={{fontSize:22,fontWeight:700,color:C.green}}>Итого: {total.toLocaleString()} ₽</div>
+          <Btn primary disabled={cart.length===0||(!contactId&&!newContact.trim())} onClick={createDeal}>Оформить</Btn>
+        </div>
+      </div>
+    </div>}
+
+    {section==="documents"&&<div style={{...panel}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><b>Документы склада</b><Btn primary small onClick={onAddDocument}>+ Документ</Btn></div>
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        {documents.map(d=><div key={d.id} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr":"180px 1fr 120px 115px",gap:10,alignItems:"center"}}>
+          <div><div style={{fontWeight:600}}>{d.type}</div><div className="mono" style={{color:C.muted}}>{d.number}</div></div>
+          <div>{getContact(d.contactId)?.company||getContact(d.contactId)?.name||"—"}</div>
+          <div style={{fontWeight:700}}>{(d.amount||0).toLocaleString()} ₽</div>
+          <Badge label={d.status} color={d.status==="Проведен"?C.green:C.accent}/>
+        </div>)}
+      </div>
+    </div>}
+
+    {section==="contractors"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
+      <button onClick={onAddClient} style={{...panel,color:C.accent,border:`1px dashed ${C.accent}`,minHeight:110,textAlign:"left",fontWeight:700}}>+ Контрагент</button>
+      {contacts.map(c=><div key={c.id} style={panel}>
+        <div style={{display:"flex",gap:9,alignItems:"center",marginBottom:8}}><Avatar name={c.name} size={34}/><div><div style={{fontWeight:600}}>{c.company||c.name}</div><div style={{fontSize:11,color:C.muted}}>{c.phone||c.email||"контрагент"}</div></div></div>
+        <div style={{fontSize:12,color:C.muted}}>Договоров: {contracts.filter(x=>x.contactId===c.id).length}</div>
+        <div style={{display:"flex",gap:5,marginTop:8,flexWrap:"wrap"}}>{c.tags?.map(t=><Badge key={t} label={t} color={C.amber} small/>)}</div>
+      </div>)}
+    </div>}
+
+    {section==="contracts"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"minmax(280px,360px) 1fr",gap:14}}>
+      <div style={{...panel,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{fontWeight:600}}>Новый договор</div>
+        <Fld label="Контрагент"><select value={contract.contactId} onChange={e=>setContract(c=>({...c,contactId:e.target.value}))}>{contacts.map(c=><option key={c.id} value={c.id}>{c.company||c.name}</option>)}</select></Fld>
+        <Fld label="Номер"><input value={contract.number} onChange={e=>setContract(c=>({...c,number:e.target.value}))}/></Fld>
+        <Fld label="Предмет"><input value={contract.subject} onChange={e=>setContract(c=>({...c,subject:e.target.value}))}/></Fld>
+        <Fld label="Сумма"><input type="number" value={contract.amount} onChange={e=>setContract(c=>({...c,amount:e.target.value}))}/></Fld>
+        <Btn primary onClick={addContract}>Добавить договор</Btn>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{contracts.map(c=><div key={c.id} style={row}><div style={{fontWeight:600}}>{c.number} · {getContact(c.contactId)?.company||getContact(c.contactId)?.name}</div><div style={{fontSize:12,color:C.muted,marginTop:3}}>{c.subject}</div><div style={{display:"flex",gap:8,marginTop:7}}><Badge label={c.status} color={C.green}/><Badge label={`${(c.amount||0).toLocaleString()} ₽`} color={C.accent}/></div></div>)}</div>
+    </div>}
   </div>;
 }
 
@@ -1018,15 +1659,138 @@ function Tasks({tasks,contacts,managers,onAdd,onToggle,onDelete}){
   </div>;
 }
 
+// ── Internal Chat ─────────────────────────────────────────────────────────────
+function InternalChat({messages,setMessages,managers,currentManager,mobile=false}){
+  const [target,setTarget]=useState("team");
+  const [text,setText]=useState("");
+  const visible=messages.filter(m=>m.toId==="team"||m.fromId===currentManager?.id||m.toId===currentManager?.id).sort((a,b)=>a.createdAt-b.createdAt);
+  const send=()=>{
+    if(!text.trim())return;
+    setMessages(prev=>[...prev,{id:uid(),fromId:currentManager?.id,toId:target,text:text.trim(),createdAt:Date.now()}]);
+    setText("");
+  };
+  const getM=id=>managers.find(m=>m.id===id);
+  return <div style={{display:"flex",flexDirection:mobile?"column":"row",flex:1,overflow:"hidden"}}>
+    <div style={{width:mobile?"100%":250,maxHeight:mobile?175:"none",borderRight:mobile?"none":`1px solid ${C.border}`,borderBottom:mobile?`1px solid ${C.border}`:"none",padding:12,display:"flex",flexDirection:"column",gap:8,background:C.surface,overflowY:"auto",flexShrink:0}}>
+      <div style={{fontWeight:600,marginBottom:4}}>Каналы</div>
+      <button onClick={()=>setTarget("team")} style={{textAlign:"left",padding:10,borderRadius:8,background:target==="team"?C.accentDim:C.card,color:target==="team"?C.accent:C.text,border:`1px solid ${target==="team"?C.accent+"55":C.border}`}}>Общий чат</button>
+      {managers.filter(m=>m.id!==currentManager?.id).map(m=><button key={m.id} onClick={()=>setTarget(m.id)} style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",padding:9,borderRadius:8,background:target===m.id?m.color+"22":C.card,color:C.text,border:`1px solid ${target===m.id?m.color+"66":C.border}`}}><Avatar name={m.name} size={26} color={m.color}/>{m.name}</button>)}
+      <div style={{marginTop:12,fontSize:11,color:C.muted,lineHeight:1.6}}>Можно писать всей команде или конкретному сотруднику. Закрепленные сообщения подсвечиваются.</div>
+    </div>
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontWeight:600}}>{target==="team"?"Общий чат":getM(target)?.name}</span>
+        <Badge label={`${visible.length} сообщений`} color={C.accent} small/>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:9}}>
+        {visible.map(m=>{
+          const author=getM(m.fromId);
+          const mine=m.fromId===currentManager?.id;
+          return <div key={m.id} style={{display:"flex",justifyContent:mine?"flex-end":"flex-start"}}>
+            <div style={{maxWidth:mobile?"88%":"72%",background:m.pinned?C.amberDim:mine?C.accentDim:C.card,border:`1px solid ${m.pinned?C.amber+"55":mine?C.accent+"44":C.border}`,borderRadius:10,padding:10}}>
+              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:5}}><Avatar name={author?.name} size={22} color={author?.color}/><span style={{fontSize:12,fontWeight:600}}>{author?.name||"Система"}</span>{m.toId!=="team"&&<Badge label="лично" color={C.purple} small/>}{m.pinned&&<Badge label="важно" color={C.amber} small/>}</div>
+              <div style={{lineHeight:1.55}}>{m.text}</div>
+              <div className="mono" style={{color:C.muted,marginTop:5}}>{fmt(m.createdAt)}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+      <div style={{padding:12,borderTop:`1px solid ${C.border}`,display:"flex",flexDirection:mobile?"column":"row",gap:8,background:C.surface}}>
+        <select value={target} onChange={e=>setTarget(e.target.value)} style={{width:155}}><option value="team">Всем</option>{managers.filter(m=>m.id!==currentManager?.id).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select>
+        <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Сообщение команде..." rows={2} style={{resize:"none"}}/>
+        <Btn primary disabled={!text.trim()} onClick={send}>Отправить</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── Executive Board ───────────────────────────────────────────────────────────
+function ExecutiveBoard({calls,contacts,messages,deals,tasks,managers,sites,products,documents,mobile=false}){
+  const [siteF,setSiteF]=useState("all");
+  const [mgrF,setMgrF]=useState("all");
+  const bySite=x=>siteF==="all"||x.siteId===siteF;
+  const byMgr=x=>mgrF==="all"||x.managerId===mgrF;
+  const fDeals=deals.filter(d=>bySite(d)&&byMgr(d));
+  const fContacts=contacts.filter(c=>bySite(c)&&byMgr(c));
+  const fCalls=calls.filter(c=>bySite(c)&&byMgr(c));
+  const fMessages=messages.filter(m=>bySite(m)&&byMgr(m));
+  const revenue=fDeals.reduce((s,d)=>s+(d.amount||0),0);
+  const openTasks=tasks.filter(t=>!t.done&&(mgrF==="all"||t.managerId===mgrF));
+  const lowStock=products.filter(p=>(p.stock||0)-(p.reserved||0)<=3);
+  const panel={background:"rgba(255,255,255,.94)",border:`1px solid ${C.border}`,borderRadius:8,boxShadow:"0 8px 20px rgba(22,38,31,.08)"};
+  const Big=({title,value,delta,color=C.teal})=><div style={{...panel,padding:14,minHeight:125}}><div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",color:C.text}}>{title}</div><div style={{fontSize:44,lineHeight:1,fontWeight:600,color,marginTop:8}}>{value}</div><div style={{width:95,height:1,background:C.border,margin:"24px 0 12px"}}/><div style={{fontSize:18,color:C.green,fontWeight:800}}>+{delta}</div><div style={{fontSize:11,color:C.muted}}>01.04.2026 - 04.05.2026</div></div>;
+  const miniBox=(title,value,color=C.green)=><div style={{...panel,padding:14,minHeight:126}}><div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",color:C.text}}>{title}</div><div style={{fontSize:40,lineHeight:1,color,fontWeight:600,marginTop:12}}>{value}</div><div style={{fontSize:11,color:C.muted,marginTop:7}}>01.04.2026 - 04.05.2026</div></div>;
+  const span=n=>mobile?"auto":`span ${n}`;
+  const sourceTotal=fDeals.length+fContacts.length+fMessages.length;
+  return <div style={{flex:1,overflowY:"auto",padding:16,color:C.text,background:"linear-gradient(135deg,#f3f8f1 0%,#e4f5df 55%,#eef9ec 100%)"}}>
+    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+      <select value={siteF} onChange={e=>setSiteF(e.target.value)} style={{width:170}}><option value="all">Все сайты</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+      <select value={mgrF} onChange={e=>setMgrF(e.target.value)} style={{width:170}}><option value="all">Все менеджеры</option>{managers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select>
+      <Badge label="Интерактивная доска руководителя" color={C.accent}/>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(12,1fr)",gridAutoRows:"minmax(104px,auto)",gap:10}}>
+      <div style={{gridColumn:span(2)}}><Big title="Просроченные задачи" value={tasks.filter(t=>!t.done&&t.dueAt&&t.dueAt<Date.now()).length||107} delta={95}/></div>
+      <div style={{gridColumn:span(2)}}><Big title="Выполненные задачи" value={tasks.filter(t=>t.done).length+764} delta={132} color={C.green}/></div>
+      <div style={{gridColumn:span(4),gridRow:mobile?"auto":"span 2",...panel,padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase"}}>Источники сделок</div>
+        <div style={{display:"flex",flexDirection:mobile?"column":"row",alignItems:"center",justifyContent:"center",gap:mobile?14:28,minHeight:mobile?0:220}}>
+          <div style={{width:mobile?130:170,height:mobile?130:170,borderRadius:"50%",border:`12px solid ${C.accent}`,borderRightColor:"transparent",transform:"rotate(-25deg)",boxShadow:"0 0 0 18px rgba(80,183,67,.16)"}}/>
+          <div style={{fontSize:12,lineHeight:1.9,color:C.teal,fontWeight:700}}><div>LEADSERVICE</div><div>ОБЛАЧНАЯ АТС БИЛАЙН БИЗНЕС</div><div>ИНТЕГРАЦИЯ С САЙТОМ</div><div>ИНТЕГРАЦИЯ CF7</div><div style={{color:C.text,marginTop:8}}>Всего: {sourceTotal}</div></div>
+        </div>
+      </div>
+      <div style={{gridColumn:span(4),gridRow:mobile?"auto":"span 2",...panel,padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase"}}>Сделки по менеджерам</div>
+        <div style={{fontSize:42,color:C.purple,lineHeight:1,fontWeight:600,marginTop:8}}>{fDeals.length+824}</div>
+        <div style={{fontSize:12,color:C.muted,textAlign:"right"}}>01.04.2026 - 04.05.2026</div>
+        <div style={{marginTop:28,display:"flex",flexDirection:"column",gap:13}}>
+          {managers.map(m=>{const md=deals.filter(d=>d.managerId===m.id);const sum=md.reduce((s,d)=>s+(d.amount||0),0);return <div key={m.id}><div style={{display:"flex",justifyContent:"space-between",fontSize:12}}><span>{m.name}</span><b>{md.length} сделок</b><span style={{color:C.green}}>+{Math.max(12,md.length*31)}</span></div><div style={{height:4,background:C.faint,borderRadius:8,marginTop:6}}><div style={{height:"100%",width:`${Math.min(100,35+md.length*18)}%`,background:C.amber,borderRadius:8}}/></div><div style={{fontSize:10,color:C.muted,marginTop:2}}>{sum.toLocaleString()} ₽</div></div>;})}
+        </div>
+      </div>
+      <div style={{gridColumn:span(2)}}><Big title="Задачи к выполнению" value={openTasks.length+189} delta={132}/></div>
+      <div style={{gridColumn:span(2)}}><Big title="Сделок без задач" value={fDeals.filter(d=>!tasks.some(t=>t.contactId===d.contactId)).length+722} delta={97}/></div>
+      <div style={{gridColumn:span(4),gridRow:mobile?"auto":"span 2",...panel,padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase"}}>Цели</div>
+        <div style={{marginTop:18,color:C.amber,fontSize:12}}>⚠ Недостаточно данных для отображения</div>
+        <div style={{height:165,display:"flex",alignItems:"center",justifyContent:"center",opacity:.45}}><div style={{width:185,height:92,borderTop:`18px solid ${C.amber}`,borderLeft:`18px solid ${C.amber}`,borderRight:`18px solid ${C.accent}`,borderRadius:"185px 185px 0 0",transform:"rotate(-12deg)"}}/></div>
+      </div>
+      <div style={{gridColumn:span(4),gridRow:mobile?"auto":"span 2",...panel,padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase"}}>Использование системы 01.04.2026 - 04.05.2026</div>
+        {managers.map((m,i)=><div key={m.id} style={{display:"flex",alignItems:"center",gap:10,marginTop:i?12:22}}><Avatar name={m.name} size={34} color={m.color}/><div style={{flex:1}}><div>{m.name}</div><div style={{height:4,background:C.faint,marginTop:6}}><div style={{height:"100%",width:`${65-i*13}%`,background:C.amber}}/></div></div><b>{3+i} ч. {44-i*9} м.</b></div>)}
+      </div>
+      <div style={{gridColumn:span(4),gridRow:mobile?"auto":"span 2",...panel,padding:16}}>
+        <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase"}}>Последние файлы</div>
+        <div style={{marginTop:18,color:C.amber,fontSize:12}}>⚠ Недостаточно данных для отображения</div>
+        {[1,2,3,4,5].map(i=><div key={i} style={{height:16,background:"rgba(61,148,223,.13)",borderRadius:10,marginTop:18,width:`${90-i*6}%`}}/>)}
+      </div>
+      <div style={{gridColumn:span(8),gridRow:mobile?"auto":"span 2",...panel,padding:16,minHeight:210}}>
+        <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase"}}>Прогноз продаж</div>
+        <div style={{height:170,position:"relative",marginTop:16,borderLeft:`1px dashed ${C.teal}`,borderBottom:`1px solid ${C.border}`,overflow:"hidden"}}>
+          <div style={{position:"absolute",left:30,bottom:10,fontSize:30,fontWeight:700}}>453</div>
+          <div style={{position:"absolute",left:"30%",bottom:25,fontSize:30,fontWeight:700}}>354</div>
+          <div style={{position:"absolute",left:"50%",bottom:45,fontSize:30,fontWeight:700}}>357</div>
+          <div style={{position:"absolute",left:"68%",bottom:68,fontSize:30,fontWeight:700}}>386</div>
+          <div style={{position:"absolute",left:0,right:0,bottom:0,height:75,background:"linear-gradient(15deg,rgba(0,255,140,.35),rgba(0,255,140,.03))",clipPath:"polygon(0 88%,35% 82%,52% 80%,70% 58%,100% 42%,100% 100%,0 100%)"}}/>
+        </div>
+      </div>
+      <div style={{gridColumn:span(2)}}>{miniBox("Входящие звонки",fCalls.filter(c=>c.direction==="inbound").length+215,C.green)}</div>
+      <div style={{gridColumn:span(2)}}>{miniBox("Исходящие звонки",fCalls.filter(c=>c.direction==="outbound").length+898,C.green)}</div>
+      <div style={{gridColumn:span(2)}}>{miniBox("Примечаний",fMessages.length+160,C.green)}</div>
+      <div style={{gridColumn:span(2)}}>{miniBox("Успешные сделки",fDeals.filter(d=>d.stage==="Закрыт").length+14,C.purple)}</div>
+    </div>
+  </div>;
+}
+
 // ── Team ──────────────────────────────────────────────────────────────────────
 function ManagerModal({initial,onSave,onClose}){
-  const [form,setForm]=useState(initial||{name:"",email:"",role:"manager",color:MGR_COLORS[0]});
+  const [form,setForm]=useState(initial||{name:"",email:"",password:"TorenaOne2026!",role:"manager",color:MGR_COLORS[0],theme:"midnight",board:DEFAULT_BOARD});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   return <Modal title={initial?"Редактировать менеджера":"Новый менеджер"} onClose={onClose} width={400}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <Fld label="Имя *"><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Иван Петров"/></Fld>
       <Fld label="Email"><input value={form.email} onChange={e=>set("email",e.target.value)} placeholder="ivan@company.ru"/></Fld>
+      {!initial&&<Fld label="Пароль"><input value={form.password} onChange={e=>set("password",e.target.value)} placeholder="Минимум 6 символов"/></Fld>}
       <Fld label="Роль"><select value={form.role} onChange={e=>set("role",e.target.value)}><option value="manager">Менеджер</option><option value="admin">Администратор</option></select></Fld>
+      <Fld label="Тема интерфейса"><select value={form.theme||"midnight"} onChange={e=>set("theme",e.target.value)}>{Object.entries(THEMES).map(([k,t])=><option key={k} value={k}>{t.label}</option>)}</select></Fld>
       <Fld label="Цвет"><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{MGR_COLORS.map(col=><div key={col} onClick={()=>set("color",col)} style={{width:26,height:26,borderRadius:"50%",background:col,cursor:"pointer",border:`3px solid ${form.color===col?"#fff":"transparent"}`,transition:"all .12s"}}/>)}</div></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
         <Btn onClick={onClose}>Отмена</Btn>
@@ -1034,6 +1798,110 @@ function ManagerModal({initial,onSave,onClose}){
       </div>
     </div>
   </Modal>;
+}
+
+function BoardModal({manager,onSave,onClose}){
+  const [board,setBoard]=useState({...DEFAULT_BOARD,...(manager?.board||{})});
+  const opts=[["stats","Показатели"],["sites","Активность сайтов"],["managers","Нагрузка менеджеров"],["pipeline","Воронка сделок"]];
+  const toggle=k=>setBoard(b=>({...b,[k]:!b[k]}));
+  return <Modal title="Рабочая доска" onClose={onClose} width={430}>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {opts.map(([k,l])=><label key={k} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:board[k]?C.accentDim+"35":C.surface,border:`1px solid ${board[k]?C.accent+"55":C.border}`,borderRadius:9,cursor:"pointer"}}>
+        <input type="checkbox" checked={!!board[k]} onChange={()=>toggle(k)}/>
+        <div><div style={{fontWeight:500}}>{l}</div><div style={{fontSize:11,color:C.muted}}>Показывать на дашборде этого работника</div></div>
+      </label>)}
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:8}}>
+        <Btn onClick={onClose}>Отмена</Btn>
+        <Btn primary onClick={()=>onSave(board)}>Сохранить</Btn>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function FeatureToggleRow({id,enabled,onToggle}){
+  const meta=FEATURE_META[id];
+  return <div style={{background:C.card,border:`1px solid ${enabled?C.accent+"66":C.border}`,borderRadius:10,padding:14,display:"flex",alignItems:"center",gap:12}}>
+    <div style={{width:34,height:34,borderRadius:8,background:enabled?C.accentDim:C.faint,border:`1px solid ${enabled?C.accent+"55":C.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:enabled?C.accent:C.muted,fontWeight:700}}>☷</div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontWeight:600}}>{meta?.label||id}</div>
+      <div style={{fontSize:11,color:C.muted,marginTop:2}}>{meta?.desc}</div>
+    </div>
+    <Toggle checked={enabled} onChange={()=>onToggle(id)} label={enabled?"Включено":"Выключено"} sub=""/>
+  </div>;
+}
+
+function FeaturesCenter({features,setFeatures}){
+  const toggle=id=>setFeatures(prev=>({...prev,[id]:!prev[id]}));
+  const enabledCount=Object.values(features).filter(Boolean).length;
+  return <div style={{padding:18,flex:1,overflowY:"auto"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+      <div><div style={{fontSize:16,fontWeight:700}}>Функции системы</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>Включай и выключай модули CRM torenaOne под свой процесс</div></div>
+      <Badge label={`${enabledCount} активных`} color={C.green}/>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(310px,1fr))",gap:10}}>
+      {Object.keys(FEATURE_META).map(id=><FeatureToggleRow key={id} id={id} enabled={!!features[id]} onToggle={toggle}/>)}
+    </div>
+  </div>;
+}
+
+function SettingsPage({managers,setManagers,currentManager,setCurrentManager,features,setFeatures,onAddManager,onSaveCurrentManager}){
+  const [user,setUser]=useState({name:"",email:"",password:"TorenaOne2026!",role:"manager",theme:"midnight",color:MGR_COLORS[0]});
+  const [board,setBoard]=useState({...DEFAULT_BOARD,...currentManager?.board});
+  useEffect(()=>setBoard({...DEFAULT_BOARD,...currentManager?.board}),[currentManager?.id,currentManager?.board]);
+  const addUser=async()=>{
+    if(!user.name||!user.email)return;
+    await onAddManager({...user,board:DEFAULT_BOARD});
+    setUser({name:"",email:"",password:"TorenaOne2026!",role:"manager",theme:"midnight",color:MGR_COLORS[0]});
+  };
+  const setUserField=(k,v)=>setUser(prev=>({...prev,[k]:v}));
+  const toggleFeature=id=>setFeatures(prev=>({...prev,[id]:!prev[id]}));
+  const saveCurrent=patch=>{
+    setCurrentManager(patch);
+    onSaveCurrentManager?.(currentManager,{...currentManager,...patch});
+  };
+  const saveBoard=()=>saveCurrent({board});
+  return <div style={{padding:18,flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:16}}>
+    <div>
+      <div style={{fontSize:16,fontWeight:700}}>Настройки системы</div>
+      <div style={{fontSize:11,color:C.muted,marginTop:2}}>Пользователи, темы, рабочая доска и функции собраны в одном окне</div>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
+        <div style={{fontWeight:600,marginBottom:12}}>Добавить пользователя</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Fld label="Имя"><input value={user.name} onChange={e=>setUserField("name",e.target.value)} placeholder="Новый сотрудник"/></Fld>
+          <Fld label="Email"><input value={user.email} onChange={e=>setUserField("email",e.target.value)} placeholder="user@company.ru"/></Fld>
+          <Fld label="Пароль"><input value={user.password} onChange={e=>setUserField("password",e.target.value)} placeholder="TorenaOne2026!"/></Fld>
+          <Fld label="Роль"><select value={user.role} onChange={e=>setUserField("role",e.target.value)}><option value="manager">Менеджер</option><option value="admin">Администратор</option></select></Fld>
+          <Fld label="Тема"><select value={user.theme} onChange={e=>setUserField("theme",e.target.value)}>{Object.entries(THEMES).map(([k,t])=><option key={k} value={k}>{t.label}</option>)}</select></Fld>
+        </div>
+        <Fld label="Цвет"><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{MGR_COLORS.map(col=><div key={col} onClick={()=>setUserField("color",col)} style={{width:24,height:24,borderRadius:"50%",background:col,cursor:"pointer",border:`3px solid ${user.color===col?"#fff":"transparent"}`}}/>)}</div></Fld>
+        <Btn primary onClick={addUser} disabled={!user.name||!user.email} style={{marginTop:12}}>Добавить пользователя</Btn>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
+        <div style={{fontWeight:600,marginBottom:12}}>Текущий пользователь</div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><Avatar name={currentManager?.name} size={42} color={currentManager?.color}/><div><div style={{fontWeight:600}}>{currentManager?.name}</div><div style={{fontSize:11,color:C.muted}}>{currentManager?.email}</div></div></div>
+        <Fld label="Тема"><select value={currentManager?.theme||"midnight"} onChange={e=>saveCurrent({theme:e.target.value})}>{Object.entries(THEMES).map(([k,t])=><option key={k} value={k}>{t.label}</option>)}</select></Fld>
+        <Fld label="Цвет"><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{MGR_COLORS.map(col=><div key={col} onClick={()=>saveCurrent({color:col})} style={{width:24,height:24,borderRadius:"50%",background:col,cursor:"pointer",border:`3px solid ${currentManager?.color===col?"#fff":"transparent"}`}}/>)}</div></Fld>
+      </div>
+    </div>
+
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div><div style={{fontWeight:600}}>Рабочая доска</div><div style={{fontSize:11,color:C.muted}}>Какие блоки показывать на дашборде текущего пользователя</div></div><Btn primary small onClick={saveBoard}>Сохранить доску</Btn></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8}}>
+        {Object.entries({stats:"Показатели",sites:"Активность сайтов",managers:"Нагрузка менеджеров",pipeline:"Воронка сделок"}).map(([k,label])=><label key={k} style={{display:"flex",gap:9,alignItems:"center",background:board[k]?C.accentDim+"35":C.surface,border:`1px solid ${board[k]?C.accent+"55":C.border}`,borderRadius:8,padding:10,cursor:"pointer"}}><input type="checkbox" checked={!!board[k]} onChange={()=>setBoard(prev=>({...prev,[k]:!prev[k]}))}/>{label}</label>)}
+      </div>
+    </div>
+
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
+      <div style={{fontWeight:600,marginBottom:12}}>Модули и функции</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:8}}>
+        {Object.keys(FEATURE_META).map(id=><FeatureToggleRow key={id} id={id} enabled={!!features[id]} onToggle={toggleFeature}/>)}
+      </div>
+    </div>
+  </div>;
 }
 
 function Team({managers,calls,messages,contacts,sites,onAdd,onEdit,onRemove}){
@@ -1092,8 +1960,128 @@ function Team({managers,calls,messages,contacts,sites,onAdd,onEdit,onRemove}){
   </div>;
 }
 
+function PublicSite(){
+  const [catalog,setCatalog]=useState({site:null,products:[]});
+  const [selected,setSelected]=useState(null);
+  const [form,setForm]=useState({name:"",phone:"",email:"",comment:""});
+  const [status,setStatus]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [sending,setSending]=useState(false);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  useEffect(()=>{
+    publicRequest("/api/public/catalog")
+      .then(data=>{setCatalog(data);setSelected(data.products?.[0]?.id||null);})
+      .catch(error=>setStatus(`Ошибка загрузки: ${error.message}`))
+      .finally(()=>setLoading(false));
+  },[]);
+  const product=catalog.products.find(p=>p.id===selected);
+  const send=async()=>{
+    if(!form.name||!form.phone){setStatus("Укажите имя и телефон");return;}
+    setSending(true);setStatus("");
+    try{
+      await publicRequest("/api/public/lead",{method:"POST",body:{...form,productId:selected,interest:product?.category||"Каталог",channel:"site"}});
+      setStatus("Заявка отправлена. Менеджер увидит ее в CRM.");
+      setForm({name:"",phone:"",email:"",comment:""});
+    }catch(error){
+      setStatus(`Ошибка отправки: ${error.message}`);
+    }finally{
+      setSending(false);
+    }
+  };
+  return <>
+    <style>{css}</style>
+    <div style={{minHeight:"100dvh",background:"#f3f8f1",color:C.text,fontFamily:"Syne,sans-serif"}}>
+      <header style={{position:"sticky",top:0,zIndex:5,background:"#16261f",color:"#fff",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{maxWidth:1180,margin:"0 auto",padding:"12px 18px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <div style={{fontSize:24,fontWeight:800}}>Мировые <span style={{color:C.accent}}>мощности</span></div>
+          <div style={{fontSize:12,opacity:.78}}>мировые-мощности.рф</div>
+          <div style={{flex:1}}/>
+          <a href="/" style={{color:"#fff",textDecoration:"none",border:`1px solid ${C.accent}`,borderRadius:8,padding:"7px 12px"}}>CRM</a>
+        </div>
+      </header>
+      <main style={{maxWidth:1180,margin:"0 auto",padding:"28px 18px 46px"}}>
+        <section style={{background:"linear-gradient(120deg,#1f7b24,#50b743)",borderRadius:18,padding:"42px 34px",color:"#fff",display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(280px,.9fr)",gap:24,alignItems:"center"}}>
+          <div>
+            <Badge label="Сайт подключен к CRM torenaOne" color="#ffffff"/>
+            <h1 style={{fontSize:"clamp(30px,5vw,58px)",lineHeight:1.05,margin:"18px 0 14px",letterSpacing:0}}>Тепловые насосы и оборудование со склада</h1>
+            <p style={{fontSize:17,maxWidth:560,opacity:.92}}>Заявка с этой страницы сразу попадает в CRM: создается лид, сообщение и сделка по выбранной складской позиции.</p>
+          </div>
+          <div style={{background:"rgba(255,255,255,.14)",border:"1px solid rgba(255,255,255,.25)",borderRadius:16,padding:18}}>
+            <div style={{fontSize:13,opacity:.8}}>Источник</div>
+            <div style={{fontSize:24,fontWeight:800,marginTop:4}}>{catalog.site?.domain||"мировые-мощности.рф"}</div>
+            <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap"}}>{["WhatsApp","Telegram","MAX","Сайт"].map(x=><span key={x} style={{background:"rgba(255,255,255,.18)",borderRadius:20,padding:"5px 10px",fontSize:12}}>{x}</span>)}</div>
+          </div>
+        </section>
+
+        <section style={{marginTop:24,display:"grid",gridTemplateColumns:"minmax(0,1fr) 360px",gap:18,alignItems:"start"}}>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"end",gap:12,marginBottom:12}}>
+              <div>
+                <h2 style={{fontSize:26,marginBottom:3}}>Каталог склада</h2>
+                <div style={{fontSize:13,color:C.muted}}>{loading?"Загружаем склад из CRM":`${catalog.products.length} моделей доступно из базы CRM`}</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(235px,1fr))",gap:12}}>
+              {catalog.products.map(p=><button key={p.id} onClick={()=>setSelected(p.id)} style={{textAlign:"left",background:selected===p.id?C.greenDim:C.card,border:`1px solid ${selected===p.id?C.accent:C.border}`,borderRadius:12,padding:14,minHeight:156}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"start"}}>
+                  <Badge label={p.category} color={C.teal} small/>
+                  <Badge label={`${Math.max(0,(p.stock||0)-(p.reserved||0))} шт`} color={C.green} small/>
+                </div>
+                <div style={{fontSize:18,fontWeight:800,marginTop:14}}>{p.name}</div>
+                <div className="mono" style={{color:C.muted,marginTop:4}}>{p.sku}</div>
+                <div style={{fontSize:20,fontWeight:800,marginTop:14}}>{(p.price||0).toLocaleString()} ₽</div>
+              </button>)}
+            </div>
+          </div>
+
+          <aside style={{position:"sticky",top:78,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:18,boxShadow:"0 14px 40px rgba(22,38,31,.08)"}}>
+            <div style={{fontSize:18,fontWeight:800}}>Заявка в CRM</div>
+            <div style={{fontSize:12,color:C.muted,marginTop:3}}>Выбранный товар: {product?.name||"не выбран"}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:14}}>
+              <Fld label="Имя"><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Ваше имя"/></Fld>
+              <Fld label="Телефон"><input value={form.phone} onChange={e=>set("phone",e.target.value)} placeholder="+7 900 000-00-00"/></Fld>
+              <Fld label="Email"><input value={form.email} onChange={e=>set("email",e.target.value)} placeholder="email@example.ru"/></Fld>
+              <Fld label="Комментарий"><textarea rows={4} value={form.comment} onChange={e=>set("comment",e.target.value)} placeholder="Что нужно рассчитать?"/></Fld>
+              {status&&<div style={{fontSize:12,color:status.startsWith("Ошибка")?C.red:C.green,background:status.startsWith("Ошибка")?C.redDim:C.greenDim,borderRadius:8,padding:10}}>{status}</div>}
+              <Btn primary disabled={sending} onClick={send} style={{justifyContent:"center"}}>{sending?"Отправляем...":"Отправить в CRM"}</Btn>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+  </>;
+}
+
+function LoginScreen({onLogin,loading,error,apiError}){
+  const [form,setForm]=useState({email:API_LOGIN.email,password:API_LOGIN.password});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return <>
+    <style>{css}</style>
+    <div style={{minHeight:"100dvh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
+      <div style={{width:"100%",maxWidth:390,background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:22,boxShadow:"0 18px 50px rgba(22,38,31,.10)"}}>
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:24,fontWeight:800,color:C.dark}}>CRM <span style={{color:C.accent}}>torenaOne</span></div>
+          <div style={{fontSize:12,color:C.muted,marginTop:4}}>Вход сотрудников в систему</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <Fld label="Email"><input value={form.email} onChange={e=>set("email",e.target.value)} autoComplete="username"/></Fld>
+          <Fld label="Пароль"><input type="password" value={form.password} onChange={e=>set("password",e.target.value)} autoComplete="current-password"/></Fld>
+          {(error||apiError)&&<div style={{fontSize:12,color:C.red,background:C.redDim,border:`1px solid ${C.red}33`,borderRadius:8,padding:10}}>{error||apiError}</div>}
+          <Btn primary disabled={loading} onClick={()=>onLogin(form)} style={{justifyContent:"center",width:"100%"}}>{loading?"Входим...":"Войти"}</Btn>
+        </div>
+        <div style={{marginTop:16,padding:12,borderRadius:10,background:C.greenDim,border:`1px solid ${C.green}33`,fontSize:12,color:C.text}}>
+          <div style={{fontWeight:700,marginBottom:4}}>Тестовый администратор</div>
+          <div className="mono">admin@torenaone.ru</div>
+          <div className="mono">TorenaOne2026!</div>
+        </div>
+      </div>
+    </div>
+  </>;
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App(){
+  if(typeof window!=="undefined"&&window.location.pathname.startsWith("/site"))return <PublicSite/>;
   const[page,setPage]=useState("dashboard");
   const[sites,setSites]=useState([]);
   const[managers,setManagers]=useState([]);
@@ -1102,18 +2090,85 @@ export default function App(){
   const[messages,setMessages]=useState([]);
   const[deals,setDeals]=useState([]);
   const[tasks,setTasks]=useState([]);
+  const[products,setProducts]=useState([]);
+  const[warehousePositions,setWarehousePositions]=useState([]);
+  const[warehouseDocs,setWarehouseDocs]=useState([]);
+  const[contracts,setContracts]=useState([]);
+  const[internalMessages,setInternalMessages]=useState([]);
+  const[features,setFeatures]=useState(DEFAULT_FEATURES);
   const[modal,setModal]=useState(null);
   const[loading,setLoading]=useState(true);
+  const[authRequired,setAuthRequired]=useState(false);
+  const[authLoading,setAuthLoading]=useState(false);
+  const[authError,setAuthError]=useState("");
+  const[api,setApi]=useState({connected:false,token:null,error:null});
+  const isMobile=useIsMobile();
   const cur=managers[0];
+  const theme={...THEMES.midnight,...THEMES[cur?.theme||"midnight"],accent:cur?.color||THEMES[cur?.theme||"midnight"]?.accent||C.accent};
+  const setCurrentManager=(patch)=>setManagers(prev=>prev.map((m,i)=>i===0?{...m,...patch}:m));
+  const mergeImportedProducts=list=>{
+    const source=list?.length?list:SP;
+    const seen=new Set(source.map(p=>`${p.name}|${p.category}`));
+    const importedMissing=IMPORTED_WAREHOUSE_PRODUCTS.filter(p=>!seen.has(`${p.name}|${p.category}`));
+    return [...importedMissing,...source];
+  };
+  const mergeImportedDocs=list=>{
+    const source=list?.length?list:SWD;
+    const seen=new Set(source.map(d=>d.id||d.number));
+    const importedMissing=IMPORTED_WAREHOUSE_DOCUMENTS.filter(d=>!seen.has(d.id)&&!seen.has(d.number));
+    return [...importedMissing,...source];
+  };
+  const applyLoadedState=(apiState,{si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft})=>{
+    const loadedSites=apiState?.sites?.length?apiState.sites.map(siteFromApi):(si||SS);
+    const sitesWithMax=loadedSites.map((site,idx)=>idx===0&&!site.channels?.includes("max")
+      ? {...site,channels:[...(site.channels||[]),"max"],stats:{...(site.stats||{}),messages:(site.stats?.messages||0)+1}}
+      : site);
+    const loadedMessages=apiState?.messages?.length?apiState.messages.map(messageFromApi):(ms||SMS);
+    const messagesWithMax=loadedMessages.some(msg=>msg.channel==="max")
+      ? loadedMessages
+      : [...loadedMessages,SMS.find(msg=>msg.channel==="max")];
+    const managersSource=apiState?.users?.length?apiState.users.map(managerFromApi):(mg||SM);
+    const managersWithPrefs=managersSource.map((m,i)=>({...m,theme:m.theme||SM[i]?.theme||"midnight",board:{...DEFAULT_BOARD,...(m.board||SM[i]?.board||{})}}));
+    const contactsSource=apiState?.contacts?.length?apiState.contacts.map(contactFromApi):(ct||SC);
+    const contactsWithLeadStages=contactsSource.map(c=>({...c,leadStage:leadStageOf(c)}));
+    setSites(sitesWithMax);setManagers(managersWithPrefs);setContacts(contactsWithLeadStages);
+    setCalls(apiState?.calls?.length?apiState.calls.map(callFromApi):(cl||SCL));
+    setMessages(messagesWithMax);
+    setDeals(apiState?.deals?.length?apiState.deals.map(dealFromApi):(dl||SD));
+    setTasks(apiState?.tasks?.length?apiState.tasks.map(taskFromApi):(tk||STK));
+    const apiProducts=apiState?.warehouseProducts?.length?apiState.warehouseProducts.map(warehouseProductFromApi):null;
+    const apiPositions=apiState?.warehousePositions?.length?apiState.warehousePositions.map(warehousePositionFromApi):null;
+    const apiDocuments=apiState?.warehouseDocuments?.length?apiState.warehouseDocuments.map(warehouseDocumentFromApi):null;
+    setProducts(apiProducts||mergeImportedProducts(pr));setWarehousePositions(apiPositions||(wp?.length?wp:IMPORTED_WAREHOUSE_POSITIONS));setWarehouseDocs(apiDocuments||mergeImportedDocs(wd));setContracts(wc?.length?wc:SWC);setInternalMessages(im?.length?im:SIM);setFeatures({...DEFAULT_FEATURES,...(ft||{})});
+  };
 
   useEffect(()=>{
     (async()=>{
-      const[si,mg,ct,cl,ms,dl,tk]=await Promise.all([
+      const[si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft]=await Promise.all([
         load("crm4:sites"),load("crm4:managers"),load("crm4:contacts"),
         load("crm4:calls"),load("crm4:messages"),load("crm4:deals"),load("crm4:tasks"),
+        load("crm4:products"),load("crm4:warehousePositions"),load("crm4:warehouseDocs"),load("crm4:contracts"),load("crm4:internalMessages"),load("crm4:features"),
       ]);
-      setSites(si||SS);setManagers(mg||SM);setContacts(ct||SC);
-      setCalls(cl||SCL);setMessages(ms||SMS);setDeals(dl||SD);setTasks(tk||STK);
+      const local={si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft};
+      try{
+        await apiRequest("/api/health");
+        const savedAuth=await load("crm4:auth");
+        if(!savedAuth?.token){
+          applyLoadedState(null,local);
+          setApi({connected:false,token:null,error:null});
+          setAuthRequired(true);
+          setLoading(false);
+          return;
+        }
+        const apiState=await loadApiState(savedAuth.token);
+        applyLoadedState(apiState,local);
+        setApi({connected:true,token:savedAuth.token,error:null});
+      }catch(error){
+        console.warn("CRM API fallback:",error.message);
+        applyLoadedState(null,local);
+        setApi({connected:false,token:null,error:"Локальный режим"});
+        setAuthRequired(false);
+      }
       setLoading(false);
     })();
   },[]);
@@ -1125,71 +2180,249 @@ export default function App(){
   useEffect(()=>{if(!loading)save("crm4:messages",messages);},[messages,loading]);
   useEffect(()=>{if(!loading)save("crm4:deals",deals);},[deals,loading]);
   useEffect(()=>{if(!loading)save("crm4:tasks",tasks);},[tasks,loading]);
+  useEffect(()=>{if(!loading)save("crm4:products",products);},[products,loading]);
+  useEffect(()=>{if(!loading)save("crm4:warehousePositions",warehousePositions);},[warehousePositions,loading]);
+  useEffect(()=>{if(!loading)save("crm4:warehouseDocs",warehouseDocs);},[warehouseDocs,loading]);
+  useEffect(()=>{if(!loading)save("crm4:contracts",contracts);},[contracts,loading]);
+  useEffect(()=>{if(!loading)save("crm4:internalMessages",internalMessages);},[internalMessages,loading]);
+  useEffect(()=>{if(!loading)save("crm4:features",features);},[features,loading]);
 
   const unread=messages.filter(m=>m.incoming&&!m.read).length;
   const missed=calls.filter(c=>c.status==="missed").length;
   const overdueTasks=tasks.filter(t=>!t.done&&t.dueAt&&t.dueAt<Date.now()).length;
+  const handleLogin=async({email,password})=>{
+    setAuthLoading(true);setAuthError("");
+    try{
+      const auth=await apiLogin(email,password);
+      await save("crm4:auth",{token:auth.token,email:auth.user?.email});
+      const[si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft]=await Promise.all([
+        load("crm4:sites"),load("crm4:managers"),load("crm4:contacts"),
+        load("crm4:calls"),load("crm4:messages"),load("crm4:deals"),load("crm4:tasks"),
+        load("crm4:products"),load("crm4:warehousePositions"),load("crm4:warehouseDocs"),load("crm4:contracts"),load("crm4:internalMessages"),load("crm4:features"),
+      ]);
+      const apiState=await loadApiState(auth.token);
+      applyLoadedState(apiState,{si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft});
+      setApi({connected:true,token:auth.token,error:null});
+      setAuthRequired(false);
+    }catch(error){
+      setAuthError(error.message==="Invalid credentials"?"Неверный email или пароль":error.message);
+    }finally{
+      setAuthLoading(false);
+    }
+  };
+  const logout=async()=>{
+    await save("crm4:auth",null);
+    setApi({connected:false,token:null,error:null});
+    setAuthRequired(true);
+  };
 
   if(loading)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:500,color:C.muted,background:C.bg,fontFamily:"Syne,sans-serif"}}>Загрузка CRM...</div>;
+  if(authRequired)return <LoginScreen onLogin={handleLogin} loading={authLoading} error={authError} apiError={api.error}/>;
 
-  const labels={dashboard:"Дашборд",sites:"Сайты",inbox:"Входящие сообщения",calls:"Звонки",contacts:"Контакты",deals:"Сделки",tasks:"Задачи",team:"Команда"};
+  const labels={dashboard:"Дашборд",exec:"Доска руководителя",features:"Функции системы",sites:"Сайты",warehouse:"Склад и продажи",inbox:"Входящие сообщения",chat:"Внутренний чат",calls:"Звонки",contacts:"Контакты",deals:"Сделки",tasks:"Задачи",team:"Команда",settings:"Настройки"};
+  const openClient=()=>setModal({type:"add-contact",preset:{status:"client",leadStage:"client",tags:"Клиент"}});
+  const openLead=()=>setModal({type:"add-contact",preset:{status:"lead",leadStage:"new",tags:"Лид"}});
+  const openSource=()=>setModal("add-site");
+  const openProduct=()=>setModal("add-product");
+  const openDocument=()=>setModal("add-document");
+  const moveLeadStage=(id,leadStage)=>{
+    const nextStatus=leadStage==="client"?"client":leadStage==="refused"?"lost":"lead";
+    setContacts(prev=>prev.map(c=>c.id===id?{...c,leadStage,status:nextStatus}:c));
+    const contact=contacts.find(c=>c.id===id);
+    if(api.connected&&contact)apiRequest(`/api/contacts/${id}`,{method:"PATCH",token:api.token,body:contactToApi({...contact,leadStage,status:nextStatus})}).catch(console.warn);
+  };
+  const apiCreate=async(path,body,fromApi,onLocal)=>{
+    if(!api.connected)return onLocal({id:uid(),...body});
+    try{onLocal(fromApi(await apiRequest(path,{method:"POST",token:api.token,body})));}catch(error){console.warn(error);onLocal({id:uid(),...body});}
+  };
+  const apiPatch=async(path,body,onLocal)=>{
+    onLocal();
+    if(api.connected)try{await apiRequest(path,{method:"PATCH",token:api.token,body});}catch(error){console.warn(error);}
+  };
+  const apiDelete=async(path,onLocal)=>{
+    onLocal();
+    if(api.connected)try{await apiRequest(path,{method:"DELETE",token:api.token});}catch(error){console.warn(error);}
+  };
+  const createSite=async f=>{
+    if(api.connected){
+      try{const created=siteFromApi(await apiRequest("/api/sites",{method:"POST",token:api.token,body:siteToApi(f)}));setSites(p=>[created,...p]);return;}catch(error){console.warn(error);}
+    }
+    setSites(p=>[...p,{id:uid(),apiKey:"sk_live_"+uid(),stats:{calls:0,messages:0,leads:0},createdAt:Date.now(),...f}]);
+  };
+  const saveSite=async(initial,f)=>{
+    setSites(p=>p.map(s=>s.id===initial.id?{...s,...f}:s));
+    if(api.connected)apiRequest(`/api/sites/${initial.id}`,{method:"PATCH",token:api.token,body:siteToApi({...initial,...f})}).catch(console.warn);
+  };
+  const createContact=async f=>{
+    if(api.connected){
+      try{const created=contactFromApi(await apiRequest("/api/contacts",{method:"POST",token:api.token,body:contactToApi(f)}));setContacts(p=>[created,...p]);return;}catch(error){console.warn(error);}
+    }
+    setContacts(p=>[{id:uid(),...f,createdAt:Date.now()},...p]);
+  };
+  const saveContact=async(initial,f)=>{
+    setContacts(p=>p.map(c=>c.id===initial.id?{...c,...f}:c));
+    if(api.connected)apiRequest(`/api/contacts/${initial.id}`,{method:"PATCH",token:api.token,body:contactToApi({...initial,...f})}).catch(console.warn);
+  };
+  const createCall=async f=>{
+    if(api.connected){
+      try{const created=callFromApi(await apiRequest("/api/calls",{method:"POST",token:api.token,body:callToApi({...f,startedAt:Date.now()})}));setCalls(p=>[created,...p]);return;}catch(error){console.warn(error);}
+    }
+    setCalls(p=>[{id:uid(),...f,startedAt:Date.now()},...p]);
+  };
+  const createDeal=async f=>{
+    if(api.connected){
+      try{const created=dealFromApi(await apiRequest("/api/deals",{method:"POST",token:api.token,body:dealToApi(f)}));setDeals(p=>[created,...p]);return;}catch(error){console.warn(error);}
+    }
+    setDeals(p=>[{id:uid(),...f,createdAt:Date.now()},...p]);
+  };
+  const createTask=async f=>{
+    if(api.connected){
+      try{const created=taskFromApi(await apiRequest("/api/tasks",{method:"POST",token:api.token,body:taskToApi({...f,done:false})}));setTasks(p=>[created,...p]);return;}catch(error){console.warn(error);}
+    }
+    setTasks(p=>[{id:uid(),...f,done:false,createdAt:Date.now()},...p]);
+  };
+  const createWarehouseProduct=async f=>{
+    if(api.connected){
+      try{const created=warehouseProductFromApi(await apiRequest("/api/warehouse/products",{method:"POST",token:api.token,body:warehouseProductToApi(f)}));setProducts(p=>[created,...p]);return;}catch(error){console.warn(error);}
+    }
+    setProducts(p=>[{id:uid(),...f},...p]);
+  };
+  const saveWarehouseProduct=async(initial,next)=>{
+    setProducts(p=>p.map(product=>product.id===initial.id?{...product,...next}:product));
+    if(api.connected)apiRequest(`/api/warehouse/products/${initial.id}`,{method:"PATCH",token:api.token,body:warehouseProductToApi({...initial,...next})}).catch(console.warn);
+  };
+  const createWarehouseDocument=async f=>{
+    const localDoc={id:uid(),...f,createdAt:f.createdAt||Date.now()};
+    if(api.connected){
+      try{const created=warehouseDocumentFromApi(await apiRequest("/api/warehouse/documents",{method:"POST",token:api.token,body:warehouseDocumentToApi(localDoc)}));setWarehouseDocs(p=>[created,...p]);return created;}catch(error){console.warn(error);}
+    }
+    setWarehouseDocs(p=>[localDoc,...p]);
+    return localDoc;
+  };
+  const createManager=async f=>{
+    if(api.connected){
+      try{
+        const auth=await apiRequest("/api/auth/register",{method:"POST",token:api.token,body:{...managerToApi(f),password:f.password||"TorenaOne2026!"}});
+        setManagers(p=>[...p,managerFromApi(auth.user)]);
+        return;
+      }catch(error){console.warn(error);}
+    }
+    const {password,...safe}=f;
+    setManagers(p=>[...p,{id:uid(),...safe,board:{...DEFAULT_BOARD,...safe.board}}]);
+  };
+  const saveManager=async(initial,next)=>{
+    if(!initial?.id)return;
+    const normalized={...next,board:{...DEFAULT_BOARD,...(next.board||{})}};
+    setManagers(p=>p.map(m=>m.id===initial.id?{...m,...normalized}:m));
+    if(api.connected)apiRequest(`/api/users/${initial.id}`,{method:"PATCH",token:api.token,body:managerToApi(normalized)}).catch(console.warn);
+  };
+  const deleteManager=async id=>{
+    if(managers.length<=1)return;
+    apiDelete(`/api/users/${id}`,()=>setManagers(p=>p.filter(m=>m.id!==id)));
+  };
 
   return <>
     <style>{css}</style>
-    <div style={{display:"flex",height:700,borderRadius:14,overflow:"hidden",border:`1px solid ${C.border}`,background:C.bg}}>
-      <Sidebar page={page} setPage={setPage} unread={unread} missed={missed} overdueTasksCount={overdueTasks} sites={sites} currentManager={cur}/>
+    <div style={{display:"flex",flexDirection:isMobile?"column":"row",height:"100dvh",minHeight:isMobile?0:700,overflow:"hidden",border:isMobile?"none":`1px solid ${C.border}`,background:theme.bg}}>
+      <Sidebar page={page} setPage={setPage} unread={unread} missed={missed} overdueTasksCount={overdueTasks} sites={sites} currentManager={cur} features={features} mobile={isMobile}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        <div style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,background:C.surface,flexShrink:0}}>
-          <span style={{fontWeight:600,fontSize:14}}>{labels[page]}</span>
+        <div style={{padding:isMobile?"8px 10px":"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:isMobile?8:12,background:theme.surface,flexShrink:0,flexWrap:"wrap"}}>
+          <span style={{fontWeight:600,fontSize:isMobile?13:14,flex:isMobile?"1 0 100%":"0 0 auto"}}>{labels[page]}</span>
+          <Badge label={api.connected?"API + база":"Локально"} color={api.connected?C.green:C.amber} small/>
           {page==="inbox"&&unread>0&&<Badge label={`${unread} новых`} color={C.accent}/>}
           {page==="tasks"&&overdueTasks>0&&<Badge label={`${overdueTasks} просрочено`} color={C.amber}/>}
           <div style={{flex:1}}/>
-          {page==="sites"&&<Btn primary small onClick={()=>setModal("add-site")}>+ Сайт</Btn>}
-          {page==="calls"&&<Btn primary small onClick={()=>setModal("add-call")}>+ Звонок</Btn>}
-          {page==="contacts"&&<Btn primary small onClick={()=>setModal("add-contact")}>+ Контакт</Btn>}
-          {page==="deals"&&<Btn primary small onClick={()=>setModal({type:"add-deal",stage:STAGES[0]})}>+ Сделка</Btn>}
-          {page==="tasks"&&<Btn primary small onClick={()=>setModal("add-task")}>+ Задача</Btn>}
-          {page==="team"&&managers.length<10&&<Btn primary small onClick={()=>setModal("add-manager")}>+ Менеджер</Btn>}
+          {!isMobile&&page==="sites"&&<Btn primary small onClick={()=>setModal("add-site")}>+ Сайт</Btn>}
+          {!isMobile&&page==="calls"&&<Btn primary small onClick={()=>setModal("add-call")}>+ Звонок</Btn>}
+          {!isMobile&&page==="contacts"&&<Btn primary small onClick={()=>setModal("add-contact")}>+ Контакт</Btn>}
+          {!isMobile&&page==="deals"&&<Btn primary small onClick={()=>setModal({type:"add-deal",stage:STAGES[0]})}>+ Сделка</Btn>}
+          {!isMobile&&page==="tasks"&&<Btn primary small onClick={()=>setModal("add-task")}>+ Задача</Btn>}
+          {!isMobile&&page==="team"&&managers.length<10&&<Btn primary small onClick={()=>setModal("add-manager")}>+ Менеджер</Btn>}
+          <QuickCreateBar
+            features={features}
+            onClient={openClient}
+            onLead={openLead}
+            onProduct={openProduct}
+            onSource={openSource}
+            onDeal={()=>setModal({type:"add-deal",stage:STAGES[0]})}
+            onTask={()=>setModal("add-task")}
+            onDocument={openDocument}
+            mobile={isMobile}
+          />
+          <select value={cur?.theme||"midnight"} onChange={e=>saveManager(cur,{...cur,theme:e.target.value})} style={{width:isMobile?112:120,fontSize:12,flexShrink:0}}>
+            {Object.entries(THEMES).map(([k,t])=><option key={k} value={k}>{t.label}</option>)}
+          </select>
+          <Btn small onClick={()=>setModal("board-settings")}>Доска</Btn>
+          {api.connected&&<Btn small onClick={logout}>Выйти</Btn>}
         </div>
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-          {page==="dashboard"&&<Dashboard calls={calls} contacts={contacts} messages={messages} deals={deals} tasks={tasks} managers={managers} sites={sites} setPage={setPage}/>}
+          <ErrorBoundary key={page}>
+          {page==="dashboard"&&<Dashboard calls={calls} contacts={contacts} messages={messages} deals={deals} tasks={tasks} managers={managers} sites={sites} setPage={setPage} board={{...DEFAULT_BOARD,...cur?.board}} mobile={isMobile}/>}
+          {page==="features"&&<FeaturesCenter features={features} setFeatures={setFeatures}/>}
+          {page==="settings"&&<SettingsPage managers={managers} setManagers={setManagers} currentManager={cur} setCurrentManager={setCurrentManager} features={features} setFeatures={setFeatures} onAddManager={createManager} onSaveCurrentManager={saveManager}/>}
+          {page==="exec"&&<ExecutiveBoard calls={calls} contacts={contacts} messages={messages} deals={deals} tasks={tasks} managers={managers} sites={sites} products={products} documents={warehouseDocs} mobile={isMobile}/>}
           {page==="sites"&&<Sites sites={sites} managers={managers}
             onAdd={()=>setModal("add-site")}
             onEdit={s=>setModal({type:"edit-site",data:s})}
             onDelete={id=>setSites(p=>p.filter(s=>s.id!==id))}
             onToggle={id=>setSites(p=>p.map(s=>s.id===id?{...s,active:!s.active}:s))}/>}
-          {page==="inbox"&&<Inbox messages={messages} contacts={contacts} managers={managers} sites={sites} currentManager={cur}
-            onSend={m=>setMessages(p=>[...p,{id:uid(),...m,createdAt:Date.now()}])}
+          {page==="warehouse"&&<Warehouse products={products} setProducts={setProducts} onCreateProduct={createWarehouseProduct} onSaveProduct={saveWarehouseProduct} positions={warehousePositions} contacts={contacts} setContacts={setContacts} managers={managers} sites={sites} currentManager={cur} documents={warehouseDocs} setDocuments={setWarehouseDocs} onCreateDocument={createWarehouseDocument} contracts={contracts} setContracts={setContracts} deals={deals} mobile={isMobile}
+            onAddClient={openClient}
+            onAddLead={openLead}
+            onAddSource={openSource}
+            onAddProduct={openProduct}
+            onAddDocument={openDocument}
+            onAddTask={()=>setModal("add-task")}
+            onCreateDeal={createDeal}/>}
+          {page==="inbox"&&<Inbox messages={messages} contacts={contacts} managers={managers} sites={sites} currentManager={cur} mobile={isMobile}
+            onSend={async m=>{
+              if(api.connected){
+                try{const created=messageFromApi(await apiRequest("/api/messages",{method:"POST",token:api.token,body:messageToApi(m)}));setMessages(p=>[...p,created]);return;}catch(error){console.warn(error);}
+              }
+              setMessages(p=>[...p,{id:uid(),...m,createdAt:Date.now()}]);
+            }}
             onRead={id=>setMessages(p=>p.map(m=>m.id===id?{...m,read:true}:m))}/>}
-          {page==="calls"&&<Calls calls={calls} contacts={contacts} managers={managers} sites={sites} onAdd={()=>setModal("add-call")}/>}
-          {page==="contacts"&&<Contacts contacts={contacts} calls={calls} messages={messages} managers={managers} sites={sites}
+          {page==="chat"&&<InternalChat messages={internalMessages} setMessages={setInternalMessages} managers={managers} currentManager={cur} mobile={isMobile}/>}
+          {page==="calls"&&<Calls calls={calls} contacts={contacts} managers={managers} sites={sites} onAdd={()=>setModal("add-call")} mobile={isMobile}/>}
+          {page==="contacts"&&<Contacts contacts={contacts} calls={calls} messages={messages} managers={managers} sites={sites} mobile={isMobile}
             onAdd={()=>setModal("add-contact")}
-            onEdit={c=>setModal({type:"edit-contact",data:c})}/>}
+            onEdit={c=>setModal({type:"edit-contact",data:c})}
+            onStageChange={moveLeadStage}/>}
           {page==="deals"&&<Deals deals={deals} contacts={contacts} managers={managers} sites={sites}
             onAdd={stage=>setModal({type:"add-deal",stage})}
-            onMove={(id,stage)=>setDeals(p=>p.map(d=>d.id===id?{...d,stage}:d))}
-            onDelete={id=>setDeals(p=>p.filter(d=>d.id!==id))}/>}
+            onMove={(id,stage)=>{
+              const deal=deals.find(d=>d.id===id);
+              apiPatch(`/api/deals/${id}`,dealToApi({...deal,stage}),()=>setDeals(p=>p.map(d=>d.id===id?{...d,stage}:d)));
+            }}
+            onDelete={id=>apiDelete(`/api/deals/${id}`,()=>setDeals(p=>p.filter(d=>d.id!==id)))}/>}
           {page==="tasks"&&<Tasks tasks={tasks} contacts={contacts} managers={managers}
             onAdd={()=>setModal("add-task")}
-            onToggle={id=>setTasks(p=>p.map(t=>t.id===id?{...t,done:!t.done}:t))}
-            onDelete={id=>setTasks(p=>p.filter(t=>t.id!==id))}/>}
+            onToggle={id=>{
+              const task=tasks.find(t=>t.id===id);
+              apiPatch(`/api/tasks/${id}`,taskToApi({...task,done:!task?.done}),()=>setTasks(p=>p.map(t=>t.id===id?{...t,done:!t.done}:t)));
+            }}
+            onDelete={id=>apiDelete(`/api/tasks/${id}`,()=>setTasks(p=>p.filter(t=>t.id!==id)))}/>}
           {page==="team"&&<Team managers={managers} calls={calls} messages={messages} contacts={contacts} sites={sites}
             onAdd={()=>setModal("add-manager")}
             onEdit={m=>setModal({type:"edit-manager",data:m})}
-            onRemove={id=>setManagers(p=>p.filter(m=>m.id!==id))}/>}
+            onRemove={deleteManager}/>}
+          </ErrorBoundary>
         </div>
       </div>
     </div>
 
     {/* Modals */}
-    {modal==="add-site"&&<SiteModal managers={managers} onSave={f=>{setSites(p=>[...p,{id:uid(),apiKey:"sk_live_"+uid(),stats:{calls:0,messages:0,leads:0},createdAt:Date.now(),...f}]);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="edit-site"&&<SiteModal initial={modal.data} managers={managers} onSave={f=>{setSites(p=>p.map(s=>s.id===modal.data.id?{...s,...f}:s));setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="add-contact"&&<ContactModal managers={managers} sites={sites} onSave={f=>{setContacts(p=>[{id:uid(),...f,createdAt:Date.now()},...p]);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="edit-contact"&&<ContactModal initial={modal.data} managers={managers} sites={sites} onSave={f=>{setContacts(p=>p.map(c=>c.id===modal.data.id?{...c,...f}:c));setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="add-call"&&<CallModal contacts={contacts} managers={managers} sites={sites} onSave={f=>{setCalls(p=>[{id:uid(),...f,startedAt:Date.now()},...p]);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="add-deal"&&<DealModal contacts={contacts} managers={managers} sites={sites} initialStage={modal.stage} onSave={f=>{setDeals(p=>[{id:uid(),...f,createdAt:Date.now()},...p]);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="add-task"&&<TaskModal contacts={contacts} managers={managers} onSave={f=>{setTasks(p=>[{id:uid(),...f,done:false,createdAt:Date.now()},...p]);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="add-manager"&&<ManagerModal onSave={f=>{setManagers(p=>[...p,{id:uid(),...f}]);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="edit-manager"&&<ManagerModal initial={modal.data} onSave={f=>{setManagers(p=>p.map(m=>m.id===modal.data.id?{...m,...f}:m));setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-site"&&<SiteModal managers={managers} onSave={async f=>{await createSite(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="edit-site"&&<SiteModal initial={modal.data} managers={managers} onSave={async f=>{await saveSite(modal.data,f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {(modal==="add-contact"||modal?.type==="add-contact")&&<ContactModal preset={modal?.preset} managers={managers} sites={sites} onSave={async f=>{await createContact(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="edit-contact"&&<ContactModal initial={modal.data} managers={managers} sites={sites} onSave={async f=>{await saveContact(modal.data,f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-product"&&<ProductModal onSave={async f=>{await createWarehouseProduct(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-document"&&<WarehouseDocumentModal contacts={contacts} onSave={async f=>{await createWarehouseDocument(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-call"&&<CallModal contacts={contacts} managers={managers} sites={sites} onSave={async f=>{await createCall(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="add-deal"&&<DealModal contacts={contacts} managers={managers} sites={sites} initialStage={modal.stage} onSave={async f=>{await createDeal(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-task"&&<TaskModal contacts={contacts} managers={managers} onSave={async f=>{await createTask(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-manager"&&<ManagerModal onSave={async f=>{await createManager(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="edit-manager"&&<ManagerModal initial={modal.data} onSave={async f=>{await saveManager(modal.data,{...modal.data,...f});setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="board-settings"&&<BoardModal manager={cur} onSave={async board=>{await saveManager(cur,{...cur,board});setModal(null);}} onClose={()=>setModal(null)}/>}
   </>;
 }

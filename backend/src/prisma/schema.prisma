@@ -14,6 +14,8 @@ model User {
   passwordHash String
   role         Role      @default(MANAGER)
   color        String    @default("#4f8ef7")
+  theme        String    @default("midnight")
+  board        Json?
   contacts     Contact[]
   calls        Call[]
   tasks        Task[]
@@ -55,6 +57,7 @@ model Contact {
   email     String?
   company   String?
   status    ContactStatus @default(LEAD)
+  leadStage String    @default("new")
   tags      String[]
   managerId String
   manager   User      @relation(fields: [managerId], references: [id])
@@ -126,8 +129,73 @@ model Deal {
   site        Site     @relation(fields: [siteId], references: [id])
   amount      Int      @default(0)
   stage       String   @default("Новый")
+  tags        String[] @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model WarehouseProduct {
+  id        String   @id @default(uuid())
+  sku       String
+  name      String
+  category  String   @default("Товары")
+  unit      String   @default("шт")
+  stock     Int      @default(0)
+  reserved  Int      @default(0)
+  price     Int      @default(0)
+  cost      Int      @default(0)
+  tags      String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sku])
+  @@index([category])
+}
+
+model WarehousePosition {
+  id            String    @id @default(uuid())
+  status        String
+  serial        String    @default("")
+  orderedAt     DateTime?
+  receivedAt    DateTime?
+  soldAt        DateTime?
+  name          String
+  category      String    @default("Товары")
+  price         Int       @default(0)
+  paid          Int       @default(0)
+  balance       Int       @default(0)
+  paymentMethod String    @default("")
+  paymentFee    Float     @default(0)
+  movementType  String    @default("")
+  contactName   String    @default("")
+  phone         String    @default("")
+  place         String    @default("")
+  source        String    @default("")
+  manager       String    @default("")
+  notes         String    @default("")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([serial])
+  @@index([category])
+}
+
+model WarehouseDocument {
+  id          String   @id @default(uuid())
+  type        String
+  number      String
+  contactId   String?
+  contactName String   @default("")
+  amount      Int      @default(0)
+  status      String   @default("Подготовлен")
+  items       Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([number])
+  @@index([type])
+  @@index([contactId])
 }
 
 model Task {
@@ -153,7 +221,24 @@ model Note {
   createdAt   DateTime @default(now())
 }
 
-enum Role          { ADMIN MANAGER }
-enum ContactStatus { LEAD CLIENT LOST }
-enum Direction     { INBOUND OUTBOUND }
-enum CallStatus    { COMPLETED MISSED BUSY }
+enum Role {
+  ADMIN
+  MANAGER
+}
+
+enum ContactStatus {
+  LEAD
+  CLIENT
+  LOST
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  COMPLETED
+  MISSED
+  BUSY
+}
