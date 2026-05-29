@@ -79,6 +79,7 @@
       comment: value("comment"),
       interest: selectedProduct()?.category || "Каталог",
       channel: "site",
+      pageUrl: window.location.href,
     };
 
     if (!body.name || !body.phone) {

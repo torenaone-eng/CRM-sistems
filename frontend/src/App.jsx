@@ -32,15 +32,16 @@ const leadStageOf=c=>c?.leadStage||(c?.status==="client"?"client":c?.status==="l
 const SITE_COLORS=["#4f8ef7","#3fb950","#a371f7","#d29922","#e1306c","#ff6b35","#2dd4bf"];
 const MGR_COLORS=["#4f8ef7","#3fb950","#a371f7","#d29922","#e1306c","#ff6b35","#229ed9","#f85149","#2dd4bf","#94d82d"];
 const THEMES={
-  midnight:{label:"torenaOne",bg:"#f3f8f1",surface:"#ffffff",card:"#ffffff",accent:"#44bd32"},
-  graphite:{label:"Светлая",bg:"#f7fbf5",surface:"#ffffff",card:"#ffffff",accent:"#36a82d"},
-  emerald:{label:"Зелёная",bg:"#edf7ea",surface:"#ffffff",card:"#ffffff",accent:"#50b743"},
-  plum:{label:"Бирюзовая",bg:"#f1f7ef",surface:"#ffffff",card:"#ffffff",accent:"#2f968b"},
+  midnight:{label:"torenaOne",bg:"#f3f8f1",surface:"#ffffff",card:"#ffffff",accent:"#44bd32",sidebar:"#14251d",header:"#ffffff",headerText:"#1f211f"},
+  graphite:{label:"Светлая",bg:"#f7f8fb",surface:"#ffffff",card:"#ffffff",accent:"#4f8ef7",sidebar:"#eef2f7",header:"#ffffff",headerText:"#1f2933",sidebarText:"#26323a"},
+  emerald:{label:"Темная",bg:"#101614",surface:"#151f1b",card:"#18231e",accent:"#6ee47a",sidebar:"#07110d",header:"#111a16",headerText:"#f4fbf4"},
+  plum:{label:"Апельсиновая",bg:"#fff4ea",surface:"#ffffff",card:"#ffffff",accent:"#ff7a1a",sidebar:"#3b2010",header:"#fff8f1",headerText:"#2a1b12"},
 };
 const DEFAULT_BOARD={stats:true,sites:true,managers:true,pipeline:true};
 const DEFAULT_FEATURES={exec:true,sites:true,warehouse:true,inbox:true,chat:true,calls:true,contacts:true,deals:true,tasks:true,team:true};
 const FEATURE_META={
   exec:{label:"Доска руководителя",desc:"KPI, менеджеры, воронка и сигналы внимания"},
+  tags:{label:"Теги",desc:"Единый справочник тегов с цветами"},
   sites:{label:"Сайты",desc:"Подключение сайтов, каналы и запись звонков"},
   warehouse:{label:"Склад",desc:"Товары, поступления, продажи, документы и договоры"},
   inbox:{label:"Входящие",desc:"Омниканальные сообщения клиентов"},
@@ -84,8 +85,10 @@ const avatarColor=n=>ACOLORS[(n||"?").charCodeAt(0)%ACOLORS.length];
 const load=async k=>{try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}catch{return null;}};
 const save=async(k,v)=>{try{await window.storage.set(k,JSON.stringify(v));}catch{}};
 const API_BASE=(import.meta.env.VITE_API_URL||"http://127.0.0.1:3001").replace(/\/$/,"");
+const API_TIMEOUT_MS=3500;
 const API_LOGIN={email:"admin@torenaone.ru",password:"TorenaOne2026!",name:"Алексей Морозов"};
 const PUBLIC_SITE_KEY="sk_live_torenaone_main";
+const PUBLIC_CRM_URL="https://crm.torenaone-office.ru";
 const roleFromApi=role=>(role||"MANAGER").toLowerCase();
 const roleToApi=role=>(role||"manager").toUpperCase();
 const statusFromApi=status=>(status||"LEAD").toLowerCase();
@@ -134,26 +137,45 @@ const warehousePositionFromApi=p=>({...p,orderedAt:timeFromApi(p.orderedAt),rece
 const warehouseDocumentFromApi=d=>({...d,createdAt:timeFromApi(d.createdAt)||Date.now(),updatedAt:timeFromApi(d.updatedAt)||Date.now(),items:d.items||[]});
 const warehouseDocumentToApi=d=>({type:d.type,number:d.number,contactId:d.contactId||null,contactName:d.contactName||"",amount:parseInt(d.amount)||0,status:d.status||"Подготовлен",items:d.items||[],createdAt:dateToApi(d.createdAt||Date.now())});
 async function apiRequest(path,{method="GET",token,body}={}){
-  const res=await fetch(`${API_BASE}${path}`,{
-    method,
-    headers:{...(body?{"Content-Type":"application/json"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},
-    body:body?JSON.stringify(body):undefined,
-  });
-  const text=await res.text();
-  const data=text?JSON.parse(text):null;
-  if(!res.ok)throw new Error(data?.error||`API ${res.status}`);
-  return data;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),API_TIMEOUT_MS);
+  try{
+    const res=await fetch(`${API_BASE}${path}`,{
+      method,
+      headers:{...(body?{"Content-Type":"application/json"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},
+      body:body?JSON.stringify(body):undefined,
+      signal:controller.signal,
+    });
+    const text=await res.text();
+    const data=text?JSON.parse(text):null;
+    if(!res.ok)throw new Error(data?.error||`API ${res.status}`);
+    return data;
+  }catch(error){
+    if(error.name==="AbortError")throw new Error("API timeout");
+    throw error;
+  }finally{
+    clearTimeout(timeout);
+  }
 }
 async function apiLogin(email,password){
   return apiRequest("/api/auth/login",{method:"POST",body:{email,password}});
 }
 async function publicRequest(path,{method="GET",body}={}){
   const url=method==="GET"?`${API_BASE}${path}${path.includes("?")?"&":"?"}apiKey=${encodeURIComponent(PUBLIC_SITE_KEY)}`:`${API_BASE}${path}`;
-  const res=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify({...body,apiKey:PUBLIC_SITE_KEY}):undefined});
-  const text=await res.text();
-  const data=text?JSON.parse(text):null;
-  if(!res.ok)throw new Error(data?.error||`API ${res.status}`);
-  return data;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),API_TIMEOUT_MS);
+  try{
+    const res=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify({...body,apiKey:PUBLIC_SITE_KEY}):undefined,signal:controller.signal});
+    const text=await res.text();
+    const data=text?JSON.parse(text):null;
+    if(!res.ok)throw new Error(data?.error||`API ${res.status}`);
+    return data;
+  }catch(error){
+    if(error.name==="AbortError")throw new Error("API timeout");
+    throw error;
+  }finally{
+    clearTimeout(timeout);
+  }
 }
 async function loadApiState(token){
   const [users,sites,contacts,calls,messages,deals,tasks,warehouseProducts,warehousePositions,warehouseDocuments]=await Promise.all([
@@ -189,7 +211,7 @@ const SM=[
   {id:"m3",name:"Иван Соколов",email:"sokolov@crm.ru",role:"manager",color:"#a371f7",theme:"plum",board:{stats:true,sites:true,managers:false,pipeline:true}},
 ];
 const SS=[
-  {id:"s1",name:"Главный сайт",domain:"mysite.ru",color:"#4f8ef7",active:true,apiKey:"sk_live_"+uid(),
+  {id:"s1",name:"Главный сайт",domain:"мировые-мощности.рф",color:"#4f8ef7",active:true,apiKey:PUBLIC_SITE_KEY,
    recording:{enabled:true,disclaimerEnabled:true,disclaimerText:DISC_TEMPLATES.ru,disclaimerVoice:true,disclaimerVoiceGender:"female",disclaimerVoiceDelay:3,disclaimerShowInChat:true},
    channels:["whatsapp","telegram","max","avito"],assignedManagers:["m1","m2"],stats:{calls:142,messages:388,leads:24},createdAt:Date.now()-86400000*30},
   {id:"s2",name:"Интернет-магазин",domain:"shop.mysite.ru",color:"#3fb950",active:true,apiKey:"sk_live_"+uid(),
@@ -256,6 +278,12 @@ const SIM=[
   {id:"im2",fromId:"m1",toId:"m2",text:"Светлана, посмотри сделку по ТехноСтарт, там высокий чек.",createdAt:Date.now()-3600000,task:true},
   {id:"im3",fromId:"m3",toId:"team",text:"Я закрыл вопрос по промо-лендингу, жду новые материалы.",createdAt:Date.now()-1800000},
 ];
+const DEFAULT_TAGS=["VIP","дом","Демо","магазин","Тендер","оборудование","отказ","Горячий","рассрочка","подписка","склад","тендер","демо","горячий","pro","звонки","rec","max","мессенджер","услуги","sip"].map((name,i)=>({
+  id:name.toLowerCase().replace(/\s+/g,"-"),
+  name,
+  color:[C.purple,C.teal,C.amber,C.green,C.red,C.accent][i%6],
+  bg:[C.purple,C.teal,C.amber,C.green,C.red,C.accent][i%6]+"22",
+}));
 
 // ── Atoms ─────────────────────────────────────────────────────────────────────
 function Avatar({name,size=32,color}){
@@ -264,10 +292,26 @@ function Avatar({name,size=32,color}){
 }
 function ChIcon({ch,size=18}){
   const c=CHANNELS[ch];if(!c)return null;
-  return <div title={c.label} style={{width:size,height:size,borderRadius:4,background:c.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.56,fontWeight:700,color:"#fff",flexShrink:0,fontFamily:"Arial,sans-serif"}}>{c.icon}</div>;
+  const common={width:size,height:size,borderRadius:5,background:c.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",flexShrink:0};
+  const glyph={whatsapp:"☎",telegram:"➤",max:"M",avito:"A",instagram:"◎",vk:"VK",youtube:"▶"}[ch]||c.icon;
+  return <div title={c.label} aria-label={c.label} style={{...common,fontSize:size*(ch==="vk" ? .34 : .58),fontWeight:800,fontFamily:"Arial,sans-serif"}}>{glyph}</div>;
 }
 function Badge({label,color=C.accent,small}){
   return <span style={{fontSize:small?10:11,padding:small?"1px 6px":"2px 8px",borderRadius:20,background:color+"22",color,border:`1px solid ${color}44`,fontWeight:500,whiteSpace:"nowrap"}}>{label}</span>;
+}
+function TagBadge({name,tags=[],small}){
+  const tag=tags.find(t=>t.name===name);
+  const color=tag?.color||C.purple;
+  const bg=tag?.bg||color+"22";
+  return <span style={{fontSize:small?10:11,padding:small?"1px 6px":"2px 8px",borderRadius:20,background:bg,color,border:`1px solid ${color}44`,fontWeight:600,whiteSpace:"nowrap"}}>{name}</span>;
+}
+function TagSelector({value=[],tags=[],onChange}){
+  const selected=Array.isArray(value)?value:[];
+  const toggle=name=>onChange(selected.includes(name)?selected.filter(t=>t!==name):[...selected,name]);
+  return <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"8px",border:`1px solid ${C.border}`,borderRadius:8,background:C.surface}}>
+    {tags.map(tag=><button key={tag.id||tag.name} type="button" onClick={()=>toggle(tag.name)} style={{background:selected.includes(tag.name)?tag.bg:C.surface,color:tag.color,border:`1px solid ${selected.includes(tag.name)?tag.color:C.border}`,borderRadius:20,padding:"4px 9px",fontSize:12,fontWeight:600}}>{tag.name}</button>)}
+    {!tags.length&&<span style={{fontSize:12,color:C.muted}}>Сначала добавьте теги в разделе "Теги"</span>}
+  </div>;
 }
 function Btn({children,onClick,primary,danger,small,style:sx,disabled}){
   const bg=primary?C.accent:danger?C.red:"transparent";
@@ -370,6 +414,7 @@ const NAV=[
   {id:"dashboard",label:"Дашборд",ic:"⊞"},
   {id:"exec",label:"Руководитель",ic:"◎"},
   {id:"features",label:"Функции",ic:"☷"},
+  {id:"tags",label:"Теги",ic:"⌗"},
   {id:"sites",label:"Сайты",ic:"◫"},
   {id:"warehouse",label:"Склад",ic:"▦"},
   {id:"inbox",label:"Входящие",ic:"✉"},
@@ -381,15 +426,17 @@ const NAV=[
   {id:"team",label:"Команда",ic:"◉"},
   {id:"settings",label:"Настройки",ic:"⚙"},
 ];
-function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentManager,features=DEFAULT_FEATURES,mobile=false}){
+function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentManager,features=DEFAULT_FEATURES,mobile=false,appTheme=THEMES.midnight}){
   const visibleNav=NAV.filter(n=>["dashboard","features","settings"].includes(n.id)||features[n.id]);
-  const sideBg="#14251d";
+  const sideBg=appTheme.sidebar||"#14251d";
+  const accent=appTheme.accent||C.accent;
   const sideLine="rgba(255,255,255,.08)";
-  const sideMuted="#b7c6b2";
-  if(mobile)return <div style={{background:sideBg,color:"#fff",borderBottom:`1px solid ${sideLine}`,flexShrink:0}}>
+  const sideText=appTheme.sidebarText||"#ffffff";
+  const sideMuted=appTheme.sidebarText?"#667464":"#b7c6b2";
+  if(mobile)return <div style={{background:sideBg,color:sideText,borderBottom:`1px solid ${sideLine}`,flexShrink:0}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 12px",borderBottom:`1px solid ${sideLine}`}}>
       <div>
-        <div style={{fontSize:15,fontWeight:700}}>CRM <span style={{color:C.accent}}>torenaOne</span></div>
+        <div style={{fontSize:15,fontWeight:700}}>CRM <span style={{color:accent}}>torenaOne</span></div>
         <div style={{fontSize:10,color:sideMuted}}>{sites.filter(s=>s.active).length} сайта активно</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
@@ -401,27 +448,27 @@ function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentMana
       {visibleNav.map(n=>{
         const active=page===n.id;
         const badge=n.id==="inbox"?unread:n.id==="calls"?missed:n.id==="tasks"?overdueTasksCount:0;
-        return <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:"0 0 auto",display:"inline-flex",alignItems:"center",gap:6,padding:"7px 10px",borderRadius:8,background:active?"rgba(80,183,67,.28)":"rgba(255,255,255,.06)",color:active?"#fff":sideMuted,border:`1px solid ${active?C.accent:"transparent"}`,fontWeight:active?700:500}}>
-          <span>{n.ic}</span><span>{n.label}</span>{badge>0&&<span style={{background:n.id==="calls"?C.red:n.id==="tasks"?C.amber:C.accent,color:"#fff",borderRadius:10,fontSize:10,padding:"1px 5px",fontWeight:700}}>{badge}</span>}
+        return <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:"0 0 auto",display:"inline-flex",alignItems:"center",gap:6,padding:"7px 10px",borderRadius:8,background:active?accent+"44":"rgba(255,255,255,.06)",color:active?sideText:sideMuted,border:`1px solid ${active?accent:"transparent"}`,fontWeight:active?700:500}}>
+          <span>{n.ic}</span><span>{n.label}</span>{badge>0&&<span style={{background:n.id==="calls"?C.red:n.id==="tasks"?C.amber:accent,color:"#fff",borderRadius:10,fontSize:10,padding:"1px 5px",fontWeight:700}}>{badge}</span>}
         </button>;
       })}
     </nav>
   </div>;
-  return <div style={{width:195,background:sideBg,borderRight:`1px solid ${sideLine}`,display:"flex",flexDirection:"column",flexShrink:0,color:"#fff"}}>
+  return <div style={{width:195,background:sideBg,borderRight:`1px solid ${sideLine}`,display:"flex",flexDirection:"column",flexShrink:0,color:sideText}}>
     <div style={{padding:"15px 14px",borderBottom:`1px solid ${sideLine}`}}>
-      <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>CRM <span style={{color:C.accent}}>torenaOne</span></div>
+      <div style={{fontSize:15,fontWeight:700,color:sideText}}>CRM <span style={{color:accent}}>torenaOne</span></div>
       <div style={{fontSize:10,color:sideMuted,marginTop:1}}>{sites.filter(s=>s.active).length} сайта активно</div>
     </div>
     <nav style={{padding:"6px 0",flex:1,overflowY:"auto"}}>
       {visibleNav.map(n=>{
         const active=page===n.id;
         const badge=n.id==="inbox"?unread:n.id==="calls"?missed:n.id==="tasks"?overdueTasksCount:0;
-        return <div key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 14px",cursor:"pointer",color:active?"#fff":sideMuted,background:active?"rgba(68,189,50,.22)":"transparent",borderLeft:`2px solid ${active?C.accent:"transparent"}`,transition:"all .12s",fontWeight:active?600:400}}
-          onMouseEnter={e=>{if(!active){e.currentTarget.style.color="#fff";e.currentTarget.style.background="rgba(255,255,255,.06)";}}}
+        return <div key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 14px",cursor:"pointer",color:active?sideText:sideMuted,background:active?accent+"33":"transparent",borderLeft:`2px solid ${active?accent:"transparent"}`,transition:"all .12s",fontWeight:active?600:400}}
+          onMouseEnter={e=>{if(!active){e.currentTarget.style.color=sideText;e.currentTarget.style.background="rgba(255,255,255,.06)";}}}
           onMouseLeave={e=>{if(!active){e.currentTarget.style.color=sideMuted;e.currentTarget.style.background="transparent";}}}>
           <span style={{fontSize:14}}>{n.ic}</span>
           <span style={{fontSize:13}}>{n.label}</span>
-          {badge>0&&<span style={{marginLeft:"auto",background:n.id==="calls"?C.red:n.id==="tasks"?C.amber:C.accent,color:"#fff",borderRadius:10,fontSize:10,padding:"1px 6px",fontWeight:700}}>{badge}</span>}
+          {badge>0&&<span style={{marginLeft:"auto",background:n.id==="calls"?C.red:n.id==="tasks"?C.amber:accent,color:"#fff",borderRadius:10,fontSize:10,padding:"1px 6px",fontWeight:700}}>{badge}</span>}
         </div>;
       })}
     </nav>
@@ -430,7 +477,7 @@ function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentMana
       <div style={{fontSize:10,color:sideMuted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:7}}>Сайты</div>
       {sites.slice(0,3).map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
         <div style={{width:7,height:7,borderRadius:"50%",background:s.active?s.color:sideMuted,flexShrink:0}}/>
-        <div style={{fontSize:11,color:s.active?"#fff":sideMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{s.name}</div>
+        <div style={{fontSize:11,color:s.active?sideText:sideMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{s.name}</div>
         {s.recording.enabled&&<div className="blink" style={{width:5,height:5,borderRadius:"50%",background:C.red}}/>}
       </div>)}
     </div>
@@ -447,12 +494,13 @@ function Sidebar({page,setPage,unread,missed,overdueTasksCount,sites,currentMana
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage,board=DEFAULT_BOARD,mobile=false}){
+function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,stages=STAGES,setPage,board=DEFAULT_BOARD,mobile=false}){
   const unread=messages.filter(m=>m.incoming&&!m.read).length;
   const missed=calls.filter(c=>c.status==="missed").length;
   const overdue=tasks.filter(t=>!t.done&&t.dueAt&&t.dueAt<Date.now()).length;
   const noDiscl=sites.filter(s=>s.recording.enabled&&!s.recording.disclaimerEnabled);
-  const pipeline=deals.filter(d=>d.stage!=="Закрыт").reduce((s,d)=>s+d.amount,0);
+  const closedStage=stages[stages.length-1]||STAGES[STAGES.length-1];
+  const pipeline=deals.filter(d=>d.stage!==closedStage).reduce((s,d)=>s+d.amount,0);
 
   const Stat=({label,val,sub,color,onClick})=><div onClick={onClick} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:14,cursor:onClick?"pointer":"default"}}
     onMouseEnter={e=>{if(onClick)e.currentTarget.style.borderColor=C.accent;}}
@@ -513,7 +561,7 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage,b
         {managers.map(m=>{
           const mCalls=calls.filter(c=>c.managerId===m.id).length;
           const mUnread=messages.filter(ms=>ms.managerId===m.id&&ms.incoming&&!ms.read).length;
-          const mDeals=deals.filter(d=>d.managerId===m.id&&d.stage!=="Закрыт").length;
+          const mDeals=deals.filter(d=>d.managerId===m.id&&d.stage!==closedStage).length;
           return <div key={m.id} style={{background:C.card,borderRadius:10,padding:"10px 13px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}>
             <Avatar name={m.name} size={34} color={m.color}/>
             <div style={{flex:1,minWidth:0}}>
@@ -529,10 +577,10 @@ function Dashboard({calls,contacts,messages,deals,tasks,managers,sites,setPage,b
     {board.pipeline&&<div>
       <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>Воронка · {pipeline.toLocaleString()} ₽ в работе</div>
       <div style={{display:"flex",gap:6}}>
-        {STAGES.map(st=>{
+        {stages.map((st,i)=>{
           const cnt=deals.filter(d=>d.stage===st).length;
           const sum=deals.filter(d=>d.stage===st).reduce((s,d)=>s+d.amount,0);
-          const color={Новый:C.muted,Переговоры:C.accent,"КП отправлено":C.amber,Закрыт:C.green}[st]||C.muted;
+          const color={Новый:C.muted,Переговоры:C.accent,"КП отправлено":C.amber,Закрыт:C.green}[st]||(i===stages.length-1?C.green:C.accent);
           return <div key={st} style={{flex:1,background:C.card,borderRadius:9,padding:"10px 12px",border:`1px solid ${color}44`}}>
             <div style={{fontSize:11,color:color,fontWeight:500,marginBottom:4}}>{st}</div>
             <div style={{fontSize:18,fontWeight:700,color:C.text}}>{cnt}</div>
@@ -712,15 +760,16 @@ function Sites({sites,managers,onAdd,onEdit,onDelete,onToggle}){
     {/* Widget snippet */}
     {sites.length>0&&<div style={{background:C.surface,borderRadius:12,padding:20,border:`1px solid ${C.border}`}}>
       <div style={{fontWeight:600,marginBottom:8}}>Подключение к сайту</div>
-      <div style={{fontSize:12,color:C.muted,marginBottom:10}}>Вставь в {'<head>'} нужного сайта:</div>
-      <pre style={{background:C.card,borderRadius:9,padding:"12px 16px",fontSize:11,fontFamily:"IBM Plex Mono,monospace",color:C.text,border:`1px solid ${C.border}`,overflowX:"auto",lineHeight:1.8}}>{`<script>
-  window.CRM_CONFIG = {
-    apiKey: "${sites[0]?.apiKey||"sk_live_xxx"}",
-    siteId: "${sites[0]?.id||"s1"}",
-    baseUrl: "https://89.125.72.180",
-  };
-</script>
-<script src="https://89.125.72.180/widget.js" async></script>`}</pre>
+      <div style={{fontSize:12,color:C.muted,marginBottom:10}}>Вставь в нужное место сайта, где должна появиться форма заявки:</div>
+      <pre style={{background:C.card,borderRadius:9,padding:"12px 16px",fontSize:11,fontFamily:"IBM Plex Mono,monospace",color:C.text,border:`1px solid ${C.border}`,overflowX:"auto",lineHeight:1.8}}>{`<div id="mm-crm-widget"></div>
+<script
+  src="${PUBLIC_CRM_URL}/mm-crm-widget.js"
+  data-api="${PUBLIC_CRM_URL}"
+  data-site-key="${sites[0]?.apiKey||PUBLIC_SITE_KEY}"
+  data-target="#mm-crm-widget"
+  data-title="Получить расчет"
+  data-button="Отправить заявку">
+</script>`}</pre>
     </div>}
   </div>;
 }
@@ -964,15 +1013,15 @@ function Calls({calls,contacts,managers,sites,onAdd,mobile=false}){
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
-function ContactModal({initial,preset,managers,sites,onSave,onClose}){
-  const blank={name:"",phone:"",email:"",company:"",status:"lead",leadStage:"new",tags:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||""};
-  const [form,setForm]=useState(initial?{...initial,tags:initial.tags?.join(", ")||""}:{...blank,...(preset||{})});
+function ContactModal({initial,preset,managers,sites,tagsCatalog=[],onSave,onClose}){
+  const blank={name:"",phone:"",email:"",company:"",status:"lead",leadStage:"new",tags:[],managerId:managers[0]?.id||"",siteId:sites[0]?.id||""};
+  const [form,setForm]=useState(initial?{...initial,tags:initial.tags||[]}:{...blank,...(preset||{}),tags:Array.isArray(preset?.tags)?preset.tags:preset?.tags?[preset.tags]:[]});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const saveContact=()=>{
     if(!form.name||!form.phone)return;
     const nextStage=form.leadStage||leadStageOf(form);
     const nextStatus=nextStage==="client"?"client":nextStage==="refused"?"lost":form.status;
-    onSave({...form,status:nextStatus,leadStage:nextStage,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});
+    onSave({...form,status:nextStatus,leadStage:nextStage,tags:form.tags||[]});
   };
   return <Modal title={initial?"Редактировать контакт":"Новый контакт"} onClose={onClose} width={460}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -986,7 +1035,7 @@ function ContactModal({initial,preset,managers,sites,onSave,onClose}){
       </div>
       <Fld label="Этап разбора лида"><select value={form.leadStage||"new"} onChange={e=>set("leadStage",e.target.value)}>{LEAD_STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</select></Fld>
       <Fld label="Менеджер"><select value={form.managerId} onChange={e=>set("managerId",e.target.value)}>{managers.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></Fld>
-      <Fld label="Интересы / теги (через запятую)" hint="Например: рассрочка, бассейн, сервис, отложенный спрос"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="рассрочка, бассейн, встреча"/></Fld>
+      <Fld label="Теги"><TagSelector value={form.tags} tags={tagsCatalog} onChange={v=>set("tags",v)}/></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:6}}>
         <Btn onClick={onClose}>Отмена</Btn>
         <Btn primary onClick={saveContact}>Сохранить</Btn>
@@ -1200,8 +1249,8 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit,onStageCh
 }
 
 // ── Deals ─────────────────────────────────────────────────────────────────────
-function DealModal({contacts,managers,sites,initialStage,onSave,onClose}){
-  const [form,setForm]=useState({title:"",contactId:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||"",amount:"",stage:initialStage||STAGES[0],tags:""});
+function DealModal({contacts,managers,sites,stages=STAGES,initialStage,onSave,onClose}){
+  const [form,setForm]=useState({title:"",contactId:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||"",amount:"",stage:initialStage||stages[0]||STAGES[0],tags:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   return <Modal title="Новая сделка" onClose={onClose} width={420}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1214,7 +1263,7 @@ function DealModal({contacts,managers,sites,initialStage,onSave,onClose}){
         <Fld label="Сайт"><select value={form.siteId} onChange={e=>set("siteId",e.target.value)}>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Fld>
         <Fld label="Сумма (₽)"><input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)} placeholder="0"/></Fld>
       </div>
-      <Fld label="Этап"><select value={form.stage} onChange={e=>set("stage",e.target.value)}>{STAGES.map(s=><option key={s} value={s}>{s}</option>)}</select></Fld>
+      <Fld label="Этап"><select value={form.stage} onChange={e=>set("stage",e.target.value)}>{stages.map(s=><option key={s} value={s}>{s}</option>)}</select></Fld>
       <Fld label="Теги"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="срочно, склад, VIP"/></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn onClick={onClose}>Отмена</Btn>
@@ -1224,12 +1273,40 @@ function DealModal({contacts,managers,sites,initialStage,onSave,onClose}){
   </Modal>;
 }
 
-function Deals({deals,contacts,managers,sites,onAdd,onMove,onDelete}){
+function Deals({deals,contacts,managers,sites,stages=STAGES,onAdd,onMove,onDelete,onStagesChange,onRenameStage}){
   const [siteF,setSiteF]=useState("all");
   const [tagF,setTagF]=useState("all");
   const tags=[...new Set(deals.flatMap(d=>d.tags||[]))];
   const filtered=deals.filter(d=>(siteF==="all"||d.siteId===siteF)&&(tagF==="all"||(d.tags||[]).includes(tagF)));
-  const pipeline=filtered.filter(d=>d.stage!=="Закрыт").reduce((s,d)=>s+d.amount,0);
+  const closedStage=stages[stages.length-1]||STAGES[STAGES.length-1];
+  const pipeline=filtered.filter(d=>d.stage!==closedStage).reduce((s,d)=>s+d.amount,0);
+  const normalize=list=>[...new Set(list.map(s=>String(s||"").trim()).filter(Boolean))];
+  const addStage=()=>{
+    const name=window.prompt("Название нового этапа воронки", "Новый этап")?.trim();
+    if(!name)return;
+    if(stages.includes(name)){window.alert("Такой этап уже есть");return;}
+    onStagesChange?.(normalize([...stages,name]));
+  };
+  const renameStage=stage=>{
+    const name=window.prompt("Новое название этапа", stage)?.trim();
+    if(!name||name===stage)return;
+    if(stages.includes(name)){window.alert("Такой этап уже есть");return;}
+    onStagesChange?.(stages.map(s=>s===stage?name:s));
+    onRenameStage?.(stage,name);
+  };
+  const removeStage=stage=>{
+    if(stages.length<=1)return;
+    if(deals.some(d=>d.stage===stage)){window.alert("Сначала перенесите или удалите сделки из этого этапа");return;}
+    if(!window.confirm(`Удалить пустой этап "${stage}"?`))return;
+    onStagesChange?.(stages.filter(s=>s!==stage));
+  };
+  const moveStage=(index,dir)=>{
+    const next=[...stages];
+    const target=index+dir;
+    if(target<0||target>=next.length)return;
+    [next[index],next[target]]=[next[target],next[index]];
+    onStagesChange?.(next);
+  };
   return <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
     <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}>
       <select value={siteF} onChange={e=>setSiteF(e.target.value)} style={{fontSize:12,width:140}}>
@@ -1240,27 +1317,32 @@ function Deals({deals,contacts,managers,sites,onAdd,onMove,onDelete}){
       </select>
       <div style={{fontSize:12,color:C.muted}}>{filtered.length} сделок · <span style={{color:C.green}}>{pipeline.toLocaleString()} ₽ в воронке</span></div>
       <div style={{flex:1}}/>
-      <Btn primary small onClick={()=>onAdd(STAGES[0])}>+ Сделка</Btn>
+      <Btn small onClick={addStage}>+ Этап</Btn>
+      <Btn primary small onClick={()=>onAdd(stages[0]||STAGES[0])}>+ Сделка</Btn>
     </div>
     <div style={{flex:1,overflowX:"auto",overflowY:"hidden",padding:14}}>
-      <div style={{display:"flex",gap:12,alignItems:"flex-start",height:"100%",minWidth:STAGES.length*215}}>
-        {STAGES.map(stage=>{
+      <div style={{display:"flex",gap:12,alignItems:"flex-start",height:"100%",minWidth:stages.length*240}}>
+        {stages.map((stage,idx)=>{
           const sd=filtered.filter(d=>d.stage===stage);
           const sum=sd.reduce((s,d)=>s+d.amount,0);
-          const stageColor={Новый:C.muted,Переговоры:C.accent,"КП отправлено":C.amber,Закрыт:C.green}[stage]||C.muted;
-          return <div key={stage} style={{flex:"0 0 210px",background:C.surface,borderRadius:12,border:`1px solid ${stageColor}44`,display:"flex",flexDirection:"column",maxHeight:"100%"}}>
-            <div style={{padding:"10px 13px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-              <span style={{fontWeight:600,fontSize:13,color:stageColor}}>{stage}</span>
+          const stageColor={Новый:C.muted,Переговоры:C.accent,"КП отправлено":C.amber,Закрыт:C.green}[stage]||(idx===stages.length-1?C.green:[C.muted,C.accent,C.amber,C.purple,C.teal][idx%5]);
+          return <div key={stage} style={{flex:"0 0 230px",background:C.surface,borderRadius:12,border:`1px solid ${stageColor}44`,display:"flex",flexDirection:"column",maxHeight:"100%"}}>
+            <div style={{padding:"10px 10px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,flexShrink:0}}>
+              <button onClick={()=>renameStage(stage)} title="Переименовать этап" style={{background:"transparent",color:stageColor,textAlign:"left",fontWeight:700,fontSize:13,lineHeight:1.25,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{stage}</button>
               <div style={{textAlign:"right"}}>
                 <Badge label={sd.length} color={stageColor} small/>
                 {sum>0&&<div style={{fontSize:10,color:C.muted,marginTop:2}}>{sum.toLocaleString()} ₽</div>}
               </div>
+              <Btn small onClick={()=>moveStage(idx,-1)} disabled={idx===0} style={{padding:"4px 7px"}}>←</Btn>
+              <Btn small onClick={()=>moveStage(idx,1)} disabled={idx===stages.length-1} style={{padding:"4px 7px"}}>→</Btn>
+              <Btn small onClick={()=>renameStage(stage)} style={{padding:"4px 7px"}}>✎</Btn>
+              {sd.length===0&&stages.length>1&&<Btn small danger onClick={()=>removeStage(stage)} style={{padding:"4px 7px"}}>×</Btn>}
             </div>
             <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,overflowY:"auto"}}>
               {sd.map(d=>{
                 const ct=contacts.find(c=>c.id===d.contactId);
                 const site=sites.find(s=>s.id===d.siteId);
-                const si=STAGES.indexOf(stage);
+                const si=stages.indexOf(stage);
                 return <div key={d.id} style={{background:C.card,borderRadius:9,padding:10,border:`1px solid ${C.border}`}}>
                   <div style={{fontWeight:500,fontSize:12,marginBottom:4}}>{d.title}</div>
                   {ct&&<div style={{fontSize:11,color:C.muted,marginBottom:3}}>{ct.name}</div>}
@@ -1269,8 +1351,8 @@ function Deals({deals,contacts,managers,sites,onAdd,onMove,onDelete}){
                   <div style={{marginBottom:6}}><MgrBadge managerId={d.managerId} managers={managers}/></div>
                   {d.tags?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{d.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}
                   <div style={{display:"flex",gap:4}}>
-                    {si>0&&<Btn small onClick={()=>onMove(d.id,STAGES[si-1])}>←</Btn>}
-                    {si<STAGES.length-1&&<Btn small primary onClick={()=>onMove(d.id,STAGES[si+1])}>→</Btn>}
+                    {si>0&&<Btn small onClick={()=>onMove(d.id,stages[si-1])}>←</Btn>}
+                    {si<stages.length-1&&<Btn small primary onClick={()=>onMove(d.id,stages[si+1])}>→</Btn>}
                     <Btn small danger onClick={()=>onDelete(d.id)} style={{marginLeft:"auto"}}>×</Btn>
                   </div>
                 </div>;
@@ -1844,17 +1926,65 @@ function FeaturesCenter({features,setFeatures}){
   </div>;
 }
 
+function TagsPage({tags,setTags}){
+  const [form,setForm]=useState({name:"",color:"#2f968b",bg:"#e0f4f1"});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const addTag=()=>{
+    const name=form.name.trim();
+    if(!name||tags.some(t=>t.name.toLowerCase()===name.toLowerCase()))return;
+    setTags(prev=>[...prev,{id:uid(),...form,name}]);
+    setForm({name:"",color:"#2f968b",bg:"#e0f4f1"});
+  };
+  const updateTag=(id,patch)=>setTags(prev=>prev.map(t=>t.id===id?{...t,...patch}:t));
+  const removeTag=id=>setTags(prev=>prev.filter(t=>t.id!==id));
+  return <div style={{padding:18,flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:16}}>
+    <div>
+      <div style={{fontSize:16,fontWeight:700}}>Теги</div>
+      <div style={{fontSize:11,color:C.muted,marginTop:2}}>Единый справочник тегов для клиентов, сделок и товаров</div>
+    </div>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,display:"grid",gridTemplateColumns:"minmax(220px,1fr) 150px 150px auto",gap:10,alignItems:"end"}}>
+      <Fld label="Название"><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Например: VIP"/></Fld>
+      <Fld label="Цвет текста"><input type="color" value={form.color} onChange={e=>set("color",e.target.value)}/></Fld>
+      <Fld label="Цвет заливки"><input type="color" value={form.bg} onChange={e=>set("bg",e.target.value)}/></Fld>
+      <Btn primary onClick={addTag} disabled={!form.name.trim()}>Добавить тег</Btn>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(285px,1fr))",gap:10}}>
+      {tags.map(tag=><div key={tag.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+          <TagBadge name={tag.name} tags={tags}/>
+          <Btn small danger onClick={()=>removeTag(tag.id)}>Удалить</Btn>
+        </div>
+        <input value={tag.name} onChange={e=>updateTag(tag.id,{name:e.target.value})}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <Fld label="Текст"><input type="color" value={tag.color} onChange={e=>updateTag(tag.id,{color:e.target.value})}/></Fld>
+          <Fld label="Заливка"><input type="color" value={tag.bg} onChange={e=>updateTag(tag.id,{bg:e.target.value})}/></Fld>
+        </div>
+      </div>)}
+    </div>
+  </div>;
+}
+
 function SettingsPage({managers,setManagers,currentManager,setCurrentManager,features,setFeatures,onAddManager,onSaveCurrentManager}){
   const [user,setUser]=useState({name:"",email:"",password:"TorenaOne2026!",role:"manager",theme:"midnight",color:MGR_COLORS[0]});
   const [board,setBoard]=useState({...DEFAULT_BOARD,...currentManager?.board});
+  const [notice,setNotice]=useState("");
   useEffect(()=>setBoard({...DEFAULT_BOARD,...currentManager?.board}),[currentManager?.id,currentManager?.board]);
   const addUser=async()=>{
     if(!user.name||!user.email)return;
+    const newName=user.name.trim();
     await onAddManager({...user,board:DEFAULT_BOARD});
     setUser({name:"",email:"",password:"TorenaOne2026!",role:"manager",theme:"midnight",color:MGR_COLORS[0]});
+    setNotice(`${newName} добавлен в команду`);
   };
   const setUserField=(k,v)=>setUser(prev=>({...prev,[k]:v}));
   const toggleFeature=id=>setFeatures(prev=>({...prev,[id]:!prev[id]}));
+  const selectManager=id=>{
+    setManagers(prev=>{
+      const manager=prev.find(m=>m.id===id);
+      if(!manager)return prev;
+      return [manager,...prev.filter(m=>m.id!==id)];
+    });
+  };
   const saveCurrent=patch=>{
     setCurrentManager(patch);
     onSaveCurrentManager?.(currentManager,{...currentManager,...patch});
@@ -1878,6 +2008,7 @@ function SettingsPage({managers,setManagers,currentManager,setCurrentManager,fea
         </div>
         <Fld label="Цвет"><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{MGR_COLORS.map(col=><div key={col} onClick={()=>setUserField("color",col)} style={{width:24,height:24,borderRadius:"50%",background:col,cursor:"pointer",border:`3px solid ${user.color===col?"#fff":"transparent"}`}}/>)}</div></Fld>
         <Btn primary onClick={addUser} disabled={!user.name||!user.email} style={{marginTop:12}}>Добавить пользователя</Btn>
+        {notice&&<div style={{marginTop:10,fontSize:12,color:C.green,background:C.greenDim,border:`1px solid ${C.green}33`,borderRadius:8,padding:9}}>{notice}</div>}
       </div>
 
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
@@ -1885,6 +2016,32 @@ function SettingsPage({managers,setManagers,currentManager,setCurrentManager,fea
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><Avatar name={currentManager?.name} size={42} color={currentManager?.color}/><div><div style={{fontWeight:600}}>{currentManager?.name}</div><div style={{fontSize:11,color:C.muted}}>{currentManager?.email}</div></div></div>
         <Fld label="Тема"><select value={currentManager?.theme||"midnight"} onChange={e=>saveCurrent({theme:e.target.value})}>{Object.entries(THEMES).map(([k,t])=><option key={k} value={k}>{t.label}</option>)}</select></Fld>
         <Fld label="Цвет"><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{MGR_COLORS.map(col=><div key={col} onClick={()=>saveCurrent({color:col})} style={{width:24,height:24,borderRadius:"50%",background:col,cursor:"pointer",border:`3px solid ${currentManager?.color===col?"#fff":"transparent"}`}}/>)}</div></Fld>
+      </div>
+    </div>
+
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12}}>
+        <div>
+          <div style={{fontWeight:600}}>Пользователи CRM</div>
+          <div style={{fontSize:11,color:C.muted}}>После добавления сотрудник сразу появляется здесь и в разделе команды</div>
+        </div>
+        <Badge label={`${managers.length} пользователей`} color={C.accent}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:8}}>
+        {managers.map((m,i)=>(
+          <div key={m.id} style={{background:i===0?C.accentDim+"35":C.surface,border:`1px solid ${i===0?C.accent+"55":C.border}`,borderRadius:10,padding:12,display:"flex",alignItems:"center",gap:10}}>
+            <Avatar name={m.name} size={36} color={m.color}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.name}</div>
+              <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email||"email не указан"}</div>
+              <div style={{display:"flex",gap:5,marginTop:5,flexWrap:"wrap"}}>
+                <Badge label={m.role==="admin"?"Администратор":"Менеджер"} color={m.role==="admin"?C.purple:C.accent} small/>
+                <Badge label={THEMES[m.theme]?.label||"torenaOne"} color={THEMES[m.theme]?.accent||C.accent} small/>
+              </div>
+            </div>
+            {i===0?<Badge label="текущий" color={C.green} small/>:<Btn small onClick={()=>selectManager(m.id)}>Выбрать</Btn>}
+          </div>
+        ))}
       </div>
     </div>
 
@@ -1979,7 +2136,7 @@ function PublicSite(){
     if(!form.name||!form.phone){setStatus("Укажите имя и телефон");return;}
     setSending(true);setStatus("");
     try{
-      await publicRequest("/api/public/lead",{method:"POST",body:{...form,productId:selected,interest:product?.category||"Каталог",channel:"site"}});
+      await publicRequest("/api/public/lead",{method:"POST",body:{...form,productId:selected,interest:product?.category||"Каталог",channel:"site",pageUrl:window.location.href}});
       setStatus("Заявка отправлена. Менеджер увидит ее в CRM.");
       setForm({name:"",phone:"",email:"",comment:""});
     }catch(error){
@@ -2052,7 +2209,7 @@ function PublicSite(){
   </>;
 }
 
-function LoginScreen({onLogin,loading,error,apiError}){
+function LoginScreen({onLogin,onSkip,loading,error,apiError}){
   const [form,setForm]=useState({email:API_LOGIN.email,password:API_LOGIN.password});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   return <>
@@ -2068,6 +2225,7 @@ function LoginScreen({onLogin,loading,error,apiError}){
           <Fld label="Пароль"><input type="password" value={form.password} onChange={e=>set("password",e.target.value)} autoComplete="current-password"/></Fld>
           {(error||apiError)&&<div style={{fontSize:12,color:C.red,background:C.redDim,border:`1px solid ${C.red}33`,borderRadius:8,padding:10}}>{error||apiError}</div>}
           <Btn primary disabled={loading} onClick={()=>onLogin(form)} style={{justifyContent:"center",width:"100%"}}>{loading?"Входим...":"Войти"}</Btn>
+          {onSkip&&<Btn disabled={loading} onClick={onSkip} style={{justifyContent:"center",width:"100%"}}>Продолжить локально</Btn>}
         </div>
         <div style={{marginTop:16,padding:12,borderRadius:10,background:C.greenDim,border:`1px solid ${C.green}33`,fontSize:12,color:C.text}}>
           <div style={{fontWeight:700,marginBottom:4}}>Тестовый администратор</div>
@@ -2089,6 +2247,8 @@ export default function App(){
   const[calls,setCalls]=useState([]);
   const[messages,setMessages]=useState([]);
   const[deals,setDeals]=useState([]);
+  const[dealStages,setDealStages]=useState(STAGES);
+  const[tagsCatalog,setTagsCatalog]=useState(DEFAULT_TAGS);
   const[tasks,setTasks]=useState([]);
   const[products,setProducts]=useState([]);
   const[warehousePositions,setWarehousePositions]=useState([]);
@@ -2104,7 +2264,7 @@ export default function App(){
   const[api,setApi]=useState({connected:false,token:null,error:null});
   const isMobile=useIsMobile();
   const cur=managers[0];
-  const theme={...THEMES.midnight,...THEMES[cur?.theme||"midnight"],accent:cur?.color||THEMES[cur?.theme||"midnight"]?.accent||C.accent};
+  const theme={...THEMES.midnight,...THEMES[cur?.theme||"midnight"]};
   const setCurrentManager=(patch)=>setManagers(prev=>prev.map((m,i)=>i===0?{...m,...patch}:m));
   const mergeImportedProducts=list=>{
     const source=list?.length?list:SP;
@@ -2118,7 +2278,8 @@ export default function App(){
     const importedMissing=IMPORTED_WAREHOUSE_DOCUMENTS.filter(d=>!seen.has(d.id)&&!seen.has(d.number));
     return [...importedMissing,...source];
   };
-  const applyLoadedState=(apiState,{si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft})=>{
+  const normalizeDealStages=list=>[...new Set((list?.length?list:STAGES).map(s=>String(s||"").trim()).filter(Boolean))];
+  const applyLoadedState=(apiState,{si,mg,ct,cl,ms,dl,ds,tg,tk,pr,wp,wd,wc,im,ft})=>{
     const loadedSites=apiState?.sites?.length?apiState.sites.map(siteFromApi):(si||SS);
     const sitesWithMax=loadedSites.map((site,idx)=>idx===0&&!site.channels?.includes("max")
       ? {...site,channels:[...(site.channels||[]),"max"],stats:{...(site.stats||{}),messages:(site.stats?.messages||0)+1}}
@@ -2135,6 +2296,8 @@ export default function App(){
     setCalls(apiState?.calls?.length?apiState.calls.map(callFromApi):(cl||SCL));
     setMessages(messagesWithMax);
     setDeals(apiState?.deals?.length?apiState.deals.map(dealFromApi):(dl||SD));
+    setDealStages(normalizeDealStages(ds));
+    setTagsCatalog(tg?.length?tg:DEFAULT_TAGS);
     setTasks(apiState?.tasks?.length?apiState.tasks.map(taskFromApi):(tk||STK));
     const apiProducts=apiState?.warehouseProducts?.length?apiState.warehouseProducts.map(warehouseProductFromApi):null;
     const apiPositions=apiState?.warehousePositions?.length?apiState.warehousePositions.map(warehousePositionFromApi):null;
@@ -2144,19 +2307,19 @@ export default function App(){
 
   useEffect(()=>{
     (async()=>{
-      const[si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft]=await Promise.all([
+      const[si,mg,ct,cl,ms,dl,ds,tg,tk,pr,wp,wd,wc,im,ft]=await Promise.all([
         load("crm4:sites"),load("crm4:managers"),load("crm4:contacts"),
-        load("crm4:calls"),load("crm4:messages"),load("crm4:deals"),load("crm4:tasks"),
+        load("crm4:calls"),load("crm4:messages"),load("crm4:deals"),load("crm4:dealStages"),load("crm4:tags"),load("crm4:tasks"),
         load("crm4:products"),load("crm4:warehousePositions"),load("crm4:warehouseDocs"),load("crm4:contracts"),load("crm4:internalMessages"),load("crm4:features"),
       ]);
-      const local={si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft};
+      const local={si,mg,ct,cl,ms,dl,ds,tg,tk,pr,wp,wd,wc,im,ft};
       try{
         await apiRequest("/api/health");
         const savedAuth=await load("crm4:auth");
         if(!savedAuth?.token){
           applyLoadedState(null,local);
-          setApi({connected:false,token:null,error:null});
-          setAuthRequired(true);
+          setApi({connected:false,token:null,error:"Локальный режим"});
+          setAuthRequired(false);
           setLoading(false);
           return;
         }
@@ -2179,6 +2342,8 @@ export default function App(){
   useEffect(()=>{if(!loading)save("crm4:calls",calls);},[calls,loading]);
   useEffect(()=>{if(!loading)save("crm4:messages",messages);},[messages,loading]);
   useEffect(()=>{if(!loading)save("crm4:deals",deals);},[deals,loading]);
+  useEffect(()=>{if(!loading)save("crm4:dealStages",dealStages);},[dealStages,loading]);
+  useEffect(()=>{if(!loading)save("crm4:tags",tagsCatalog);},[tagsCatalog,loading]);
   useEffect(()=>{if(!loading)save("crm4:tasks",tasks);},[tasks,loading]);
   useEffect(()=>{if(!loading)save("crm4:products",products);},[products,loading]);
   useEffect(()=>{if(!loading)save("crm4:warehousePositions",warehousePositions);},[warehousePositions,loading]);
@@ -2195,13 +2360,13 @@ export default function App(){
     try{
       const auth=await apiLogin(email,password);
       await save("crm4:auth",{token:auth.token,email:auth.user?.email});
-      const[si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft]=await Promise.all([
+      const[si,mg,ct,cl,ms,dl,ds,tg,tk,pr,wp,wd,wc,im,ft]=await Promise.all([
         load("crm4:sites"),load("crm4:managers"),load("crm4:contacts"),
-        load("crm4:calls"),load("crm4:messages"),load("crm4:deals"),load("crm4:tasks"),
+        load("crm4:calls"),load("crm4:messages"),load("crm4:deals"),load("crm4:dealStages"),load("crm4:tags"),load("crm4:tasks"),
         load("crm4:products"),load("crm4:warehousePositions"),load("crm4:warehouseDocs"),load("crm4:contracts"),load("crm4:internalMessages"),load("crm4:features"),
       ]);
       const apiState=await loadApiState(auth.token);
-      applyLoadedState(apiState,{si,mg,ct,cl,ms,dl,tk,pr,wp,wd,wc,im,ft});
+      applyLoadedState(apiState,{si,mg,ct,cl,ms,dl,ds,tg,tk,pr,wp,wd,wc,im,ft});
       setApi({connected:true,token:auth.token,error:null});
       setAuthRequired(false);
     }catch(error){
@@ -2217,9 +2382,9 @@ export default function App(){
   };
 
   if(loading)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:500,color:C.muted,background:C.bg,fontFamily:"Syne,sans-serif"}}>Загрузка CRM...</div>;
-  if(authRequired)return <LoginScreen onLogin={handleLogin} loading={authLoading} error={authError} apiError={api.error}/>;
+  if(authRequired)return <LoginScreen onLogin={handleLogin} onSkip={()=>{setAuthRequired(false);setAuthError("");}} loading={authLoading} error={authError} apiError={api.error}/>;
 
-  const labels={dashboard:"Дашборд",exec:"Доска руководителя",features:"Функции системы",sites:"Сайты",warehouse:"Склад и продажи",inbox:"Входящие сообщения",chat:"Внутренний чат",calls:"Звонки",contacts:"Контакты",deals:"Сделки",tasks:"Задачи",team:"Команда",settings:"Настройки"};
+  const labels={dashboard:"Дашборд",exec:"Доска руководителя",features:"Функции системы",tags:"Теги",sites:"Сайты",warehouse:"Склад и продажи",inbox:"Входящие сообщения",chat:"Внутренний чат",calls:"Звонки",contacts:"Контакты",deals:"Сделки",tasks:"Задачи",team:"Команда",settings:"Настройки"};
   const openClient=()=>setModal({type:"add-contact",preset:{status:"client",leadStage:"client",tags:"Клиент"}});
   const openLead=()=>setModal({type:"add-contact",preset:{status:"lead",leadStage:"new",tags:"Лид"}});
   const openSource=()=>setModal("add-site");
@@ -2320,13 +2485,20 @@ export default function App(){
     if(managers.length<=1)return;
     apiDelete(`/api/users/${id}`,()=>setManagers(p=>p.filter(m=>m.id!==id)));
   };
+  const renameDealStage=async(from,to)=>{
+    const affected=deals.filter(d=>d.stage===from);
+    setDeals(p=>p.map(d=>d.stage===from?{...d,stage:to}:d));
+    if(api.connected)affected.forEach(deal=>{
+      apiRequest(`/api/deals/${deal.id}`,{method:"PATCH",token:api.token,body:dealToApi({...deal,stage:to})}).catch(console.warn);
+    });
+  };
 
   return <>
     <style>{css}</style>
     <div style={{display:"flex",flexDirection:isMobile?"column":"row",height:"100dvh",minHeight:isMobile?0:700,overflow:"hidden",border:isMobile?"none":`1px solid ${C.border}`,background:theme.bg}}>
-      <Sidebar page={page} setPage={setPage} unread={unread} missed={missed} overdueTasksCount={overdueTasks} sites={sites} currentManager={cur} features={features} mobile={isMobile}/>
+      <Sidebar page={page} setPage={setPage} unread={unread} missed={missed} overdueTasksCount={overdueTasks} sites={sites} currentManager={cur} features={features} mobile={isMobile} appTheme={theme}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        <div style={{padding:isMobile?"8px 10px":"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:isMobile?8:12,background:theme.surface,flexShrink:0,flexWrap:"wrap"}}>
+        <div style={{padding:isMobile?"8px 10px":"10px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:isMobile?8:12,background:theme.header||theme.surface,color:theme.headerText||C.text,flexShrink:0,flexWrap:"wrap"}}>
           <span style={{fontWeight:600,fontSize:isMobile?13:14,flex:isMobile?"1 0 100%":"0 0 auto"}}>{labels[page]}</span>
           <Badge label={api.connected?"API + база":"Локально"} color={api.connected?C.green:C.amber} small/>
           {page==="inbox"&&unread>0&&<Badge label={`${unread} новых`} color={C.accent}/>}
@@ -2335,7 +2507,7 @@ export default function App(){
           {!isMobile&&page==="sites"&&<Btn primary small onClick={()=>setModal("add-site")}>+ Сайт</Btn>}
           {!isMobile&&page==="calls"&&<Btn primary small onClick={()=>setModal("add-call")}>+ Звонок</Btn>}
           {!isMobile&&page==="contacts"&&<Btn primary small onClick={()=>setModal("add-contact")}>+ Контакт</Btn>}
-          {!isMobile&&page==="deals"&&<Btn primary small onClick={()=>setModal({type:"add-deal",stage:STAGES[0]})}>+ Сделка</Btn>}
+          {!isMobile&&page==="deals"&&<Btn primary small onClick={()=>setModal({type:"add-deal",stage:dealStages[0]||STAGES[0]})}>+ Сделка</Btn>}
           {!isMobile&&page==="tasks"&&<Btn primary small onClick={()=>setModal("add-task")}>+ Задача</Btn>}
           {!isMobile&&page==="team"&&managers.length<10&&<Btn primary small onClick={()=>setModal("add-manager")}>+ Менеджер</Btn>}
           <QuickCreateBar
@@ -2344,7 +2516,7 @@ export default function App(){
             onLead={openLead}
             onProduct={openProduct}
             onSource={openSource}
-            onDeal={()=>setModal({type:"add-deal",stage:STAGES[0]})}
+            onDeal={()=>setModal({type:"add-deal",stage:dealStages[0]||STAGES[0]})}
             onTask={()=>setModal("add-task")}
             onDocument={openDocument}
             mobile={isMobile}
@@ -2353,19 +2525,23 @@ export default function App(){
             {Object.entries(THEMES).map(([k,t])=><option key={k} value={k}>{t.label}</option>)}
           </select>
           <Btn small onClick={()=>setModal("board-settings")}>Доска</Btn>
-          {api.connected&&<Btn small onClick={logout}>Выйти</Btn>}
+          {api.connected?<Btn small onClick={logout}>Выйти</Btn>:<Btn small onClick={()=>setAuthRequired(true)}>Войти</Btn>}
         </div>
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
           <ErrorBoundary key={page}>
-          {page==="dashboard"&&<Dashboard calls={calls} contacts={contacts} messages={messages} deals={deals} tasks={tasks} managers={managers} sites={sites} setPage={setPage} board={{...DEFAULT_BOARD,...cur?.board}} mobile={isMobile}/>}
+          {page==="dashboard"&&<Dashboard calls={calls} contacts={contacts} messages={messages} deals={deals} tasks={tasks} managers={managers} sites={sites} stages={dealStages} setPage={setPage} board={{...DEFAULT_BOARD,...cur?.board}} mobile={isMobile}/>}
           {page==="features"&&<FeaturesCenter features={features} setFeatures={setFeatures}/>}
+          {page==="tags"&&<TagsPage tags={tagsCatalog} setTags={setTagsCatalog}/>}
           {page==="settings"&&<SettingsPage managers={managers} setManagers={setManagers} currentManager={cur} setCurrentManager={setCurrentManager} features={features} setFeatures={setFeatures} onAddManager={createManager} onSaveCurrentManager={saveManager}/>}
           {page==="exec"&&<ExecutiveBoard calls={calls} contacts={contacts} messages={messages} deals={deals} tasks={tasks} managers={managers} sites={sites} products={products} documents={warehouseDocs} mobile={isMobile}/>}
           {page==="sites"&&<Sites sites={sites} managers={managers}
             onAdd={()=>setModal("add-site")}
             onEdit={s=>setModal({type:"edit-site",data:s})}
-            onDelete={id=>setSites(p=>p.filter(s=>s.id!==id))}
-            onToggle={id=>setSites(p=>p.map(s=>s.id===id?{...s,active:!s.active}:s))}/>}
+            onDelete={id=>apiDelete(`/api/sites/${id}`,()=>setSites(p=>p.filter(s=>s.id!==id)))}
+            onToggle={id=>{
+              const site=sites.find(s=>s.id===id);
+              apiPatch(`/api/sites/${id}`,siteToApi({...site,active:!site?.active}),()=>setSites(p=>p.map(s=>s.id===id?{...s,active:!s.active}:s)));
+            }}/>}
           {page==="warehouse"&&<Warehouse products={products} setProducts={setProducts} onCreateProduct={createWarehouseProduct} onSaveProduct={saveWarehouseProduct} positions={warehousePositions} contacts={contacts} setContacts={setContacts} managers={managers} sites={sites} currentManager={cur} documents={warehouseDocs} setDocuments={setWarehouseDocs} onCreateDocument={createWarehouseDocument} contracts={contracts} setContracts={setContracts} deals={deals} mobile={isMobile}
             onAddClient={openClient}
             onAddLead={openLead}
@@ -2388,8 +2564,10 @@ export default function App(){
             onAdd={()=>setModal("add-contact")}
             onEdit={c=>setModal({type:"edit-contact",data:c})}
             onStageChange={moveLeadStage}/>}
-          {page==="deals"&&<Deals deals={deals} contacts={contacts} managers={managers} sites={sites}
+          {page==="deals"&&<Deals deals={deals} contacts={contacts} managers={managers} sites={sites} stages={dealStages}
             onAdd={stage=>setModal({type:"add-deal",stage})}
+            onStagesChange={setDealStages}
+            onRenameStage={renameDealStage}
             onMove={(id,stage)=>{
               const deal=deals.find(d=>d.id===id);
               apiPatch(`/api/deals/${id}`,dealToApi({...deal,stage}),()=>setDeals(p=>p.map(d=>d.id===id?{...d,stage}:d)));
@@ -2419,7 +2597,7 @@ export default function App(){
     {modal==="add-product"&&<ProductModal onSave={async f=>{await createWarehouseProduct(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-document"&&<WarehouseDocumentModal contacts={contacts} onSave={async f=>{await createWarehouseDocument(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-call"&&<CallModal contacts={contacts} managers={managers} sites={sites} onSave={async f=>{await createCall(f);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="add-deal"&&<DealModal contacts={contacts} managers={managers} sites={sites} initialStage={modal.stage} onSave={async f=>{await createDeal(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="add-deal"&&<DealModal contacts={contacts} managers={managers} sites={sites} stages={dealStages} initialStage={modal.stage} onSave={async f=>{await createDeal(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-task"&&<TaskModal contacts={contacts} managers={managers} onSave={async f=>{await createTask(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-manager"&&<ManagerModal onSave={async f=>{await createManager(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal?.type==="edit-manager"&&<ManagerModal initial={modal.data} onSave={async f=>{await saveManager(modal.data,{...modal.data,...f});setModal(null);}} onClose={()=>setModal(null)}/>}

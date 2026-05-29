@@ -4,12 +4,24 @@ import App from './App.jsx'
 
 // Polyfill storage for development (without Claude's storage API)
 if (!window.storage) {
-  const store = {}
+  const prefix = 'crm-storage:'
   window.storage = {
-    get: async (key) => store[key] ? { key, value: store[key] } : null,
-    set: async (key, value) => { store[key] = value; return { key, value } },
-    delete: async (key) => { delete store[key]; return { key, deleted: true } },
-    list: async (prefix) => ({ keys: Object.keys(store).filter(k => !prefix || k.startsWith(prefix)) }),
+    get: async (key) => {
+      const value = localStorage.getItem(prefix + key)
+      return value === null ? null : { key, value }
+    },
+    set: async (key, value) => {
+      if (value === null || value === undefined) localStorage.removeItem(prefix + key)
+      else localStorage.setItem(prefix + key, value)
+      return { key, value }
+    },
+    delete: async (key) => { localStorage.removeItem(prefix + key); return { key, deleted: true } },
+    list: async (keyPrefix) => ({
+      keys: Object.keys(localStorage)
+        .filter(k => k.startsWith(prefix))
+        .map(k => k.slice(prefix.length))
+        .filter(k => !keyPrefix || k.startsWith(keyPrefix)),
+    }),
   }
 }
 

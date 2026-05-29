@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
+import { sendLeadToAmo } from '../services/amocrm'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -44,6 +45,7 @@ router.post('/lead', async (req: Request, res: Response) => {
   const phone = String(req.body.phone || '').trim()
   const interest = String(req.body.interest || '').trim()
   const productId = req.body.productId ? String(req.body.productId) : null
+  const pageUrl = String(req.body.pageUrl || req.header('referer') || '').trim()
   if (!name || !phone) return res.status(400).json({ error: 'Name and phone required' })
 
   const product = productId ? await prisma.warehouseProduct.findUnique({ where: { id: productId } }) : null
@@ -93,7 +95,21 @@ router.post('/lead', async (req: Request, res: Response) => {
     },
   })
 
-  res.status(201).json({ ok: true, contact, message, deal })
+  const amo = await sendLeadToAmo({
+    name,
+    phone,
+    email: req.body.email || null,
+    comment: [
+      product ? `Товар: ${product.name}` : null,
+      interest ? `Интерес: ${interest}` : null,
+      req.body.comment ? `Комментарий: ${req.body.comment}` : null,
+    ].filter(Boolean).join('\n'),
+    source: site.name || site.domain,
+    pageUrl,
+    price: product?.price || 0,
+  })
+
+  res.status(201).json({ ok: true, contact, message, deal, amo })
 })
 
 export default router
