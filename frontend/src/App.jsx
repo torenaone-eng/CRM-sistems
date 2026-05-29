@@ -38,7 +38,7 @@ const THEMES={
   plum:{label:"Апельсиновая",bg:"#fff4ea",surface:"#ffffff",card:"#ffffff",accent:"#ff7a1a",sidebar:"#3b2010",header:"#fff8f1",headerText:"#2a1b12"},
 };
 const DEFAULT_BOARD={stats:true,sites:true,managers:true,pipeline:true};
-const DEFAULT_FEATURES={exec:true,sites:true,warehouse:true,inbox:true,chat:true,calls:true,contacts:true,deals:true,tasks:true,team:true};
+const DEFAULT_FEATURES={exec:true,tags:true,sites:true,warehouse:true,inbox:true,chat:true,calls:true,contacts:true,deals:true,tasks:true,team:true};
 const FEATURE_META={
   exec:{label:"Доска руководителя",desc:"KPI, менеджеры, воронка и сигналы внимания"},
   tags:{label:"Теги",desc:"Единый справочник тегов с цветами"},
@@ -84,7 +84,8 @@ const ACOLORS=["#4f8ef7","#3fb950","#d29922","#a371f7","#e1306c","#ff6b35","#229
 const avatarColor=n=>ACOLORS[(n||"?").charCodeAt(0)%ACOLORS.length];
 const load=async k=>{try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}catch{return null;}};
 const save=async(k,v)=>{try{await window.storage.set(k,JSON.stringify(v));}catch{}};
-const API_BASE=(import.meta.env.VITE_API_URL||"http://127.0.0.1:3001").replace(/\/$/,"");
+const isLocalApp=typeof window!=="undefined"&&["localhost","127.0.0.1"].includes(window.location.hostname);
+const API_BASE=(import.meta.env.VITE_API_URL||(isLocalApp?"http://127.0.0.1:3001":window.location.origin)).replace(/\/$/,"");
 const API_TIMEOUT_MS=3500;
 const API_LOGIN={email:"admin@torenaone.ru",password:"TorenaOne2026!",name:"Алексей Морозов"};
 const PUBLIC_SITE_KEY="sk_live_torenaone_main";
@@ -278,7 +279,7 @@ const SIM=[
   {id:"im2",fromId:"m1",toId:"m2",text:"Светлана, посмотри сделку по ТехноСтарт, там высокий чек.",createdAt:Date.now()-3600000,task:true},
   {id:"im3",fromId:"m3",toId:"team",text:"Я закрыл вопрос по промо-лендингу, жду новые материалы.",createdAt:Date.now()-1800000},
 ];
-const DEFAULT_TAGS=["VIP","дом","Демо","магазин","Тендер","оборудование","отказ","Горячий","рассрочка","подписка","склад","тендер","демо","горячий","pro","звонки","rec","max","мессенджер","услуги","sip"].map((name,i)=>({
+const DEFAULT_TAGS=["Клиент","Лид","VIP","дом","Демо","магазин","Тендер","оборудование","отказ","Горячий","рассрочка","подписка","склад","тендер","демо","горячий","pro","звонки","rec","max","мессенджер","услуги","sip"].map((name,i)=>({
   id:name.toLowerCase().replace(/\s+/g,"-"),
   name,
   color:[C.purple,C.teal,C.amber,C.green,C.red,C.accent][i%6],
@@ -1044,9 +1045,9 @@ function ContactModal({initial,preset,managers,sites,tagsCatalog=[],onSave,onClo
   </Modal>;
 }
 
-function ProductModal({initial,onSave,onClose}){
-  const blank={name:"",sku:"",category:"Товары",unit:"шт",stock:0,reserved:0,price:"",cost:"",tags:""};
-  const [form,setForm]=useState(initial?{...initial,tags:initial.tags?.join(", ")||""}:{...blank});
+function ProductModal({initial,tagsCatalog=[],onSave,onClose}){
+  const blank={name:"",sku:"",category:"Товары",unit:"шт",stock:0,reserved:0,price:"",cost:"",tags:[]};
+  const [form,setForm]=useState(initial?{...initial,tags:initial.tags||[]}:{...blank});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   return <Modal title={initial?"Редактировать товар":"Новый товар"} onClose={onClose} width={470}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1060,10 +1061,10 @@ function ProductModal({initial,onSave,onClose}){
         <Fld label="Цена продажи"><input type="number" value={form.price} onChange={e=>set("price",e.target.value)} placeholder="0"/></Fld>
         <Fld label="Себестоимость"><input type="number" value={form.cost} onChange={e=>set("cost",e.target.value)} placeholder="0"/></Fld>
       </div>
-      <Fld label="Теги"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="склад, товар, оборудование"/></Fld>
+      <Fld label="Теги"><TagSelector value={form.tags} tags={tagsCatalog} onChange={v=>set("tags",v)}/></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:6}}>
         <Btn onClick={onClose}>Отмена</Btn>
-        <Btn primary onClick={()=>{if(!form.name||!form.sku)return;onSave({...form,stock:parseInt(form.stock)||0,reserved:parseInt(form.reserved)||0,price:parseInt(form.price)||0,cost:parseInt(form.cost)||0,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});}}>Сохранить</Btn>
+        <Btn primary onClick={()=>{if(!form.name||!form.sku)return;onSave({...form,stock:parseInt(form.stock)||0,reserved:parseInt(form.reserved)||0,price:parseInt(form.price)||0,cost:parseInt(form.cost)||0,tags:form.tags||[]});}}>Сохранить</Btn>
       </div>
     </div>
   </Modal>;
@@ -1089,7 +1090,7 @@ function WarehouseDocumentModal({contacts,onSave,onClose}){
   </Modal>;
 }
 
-function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit,onStageChange,mobile=false}){
+function Contacts({contacts,calls,messages,managers,sites,tagsCatalog=[],onAdd,onEdit,onStageChange,mobile=false}){
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("all");
   const [siteF,setSiteF]=useState("all");
@@ -1127,7 +1128,7 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit,onStageCh
       <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
         {site&&<SiteBadge siteId={c.siteId} sites={sites}/>}
         {mgr&&<MgrBadge managerId={c.managerId} managers={managers}/>}
-        {c.tags?.map(t=><Badge key={t} label={t} color={t.toLowerCase().includes("расср")?C.amber:t.toLowerCase().includes("отказ")?C.red:C.purple} small/>)}
+        {c.tags?.map(t=><TagBadge key={t} name={t} tags={tagsCatalog} small/>)}
       </div>
       <select value={stage} onChange={e=>moveLead(c.id,e.target.value)} style={{fontSize:12}}>
         {LEAD_STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
@@ -1197,7 +1198,7 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit,onStageCh
             </div>
             <div style={{display:"flex",gap:3}}>{cChs.map(ch=><ChIcon key={ch} ch={ch} size={14}/>)}</div>
             {unread>0&&<Badge label={unread} color={C.accent} small/>}
-            {c.tags?.slice(0,2).map(t=><Badge key={t} label={t} color={C.amber} small/>)}
+            {c.tags?.slice(0,2).map(t=><TagBadge key={t} name={t} tags={tagsCatalog} small/>)}
             <SiteBadge siteId={c.siteId} sites={sites}/>
             <Badge label={stLabel} color={stCol} small/>
             {leadStage&&<Badge label={leadStage.short} color={C.teal} small/>}
@@ -1249,8 +1250,8 @@ function Contacts({contacts,calls,messages,managers,sites,onAdd,onEdit,onStageCh
 }
 
 // ── Deals ─────────────────────────────────────────────────────────────────────
-function DealModal({contacts,managers,sites,stages=STAGES,initialStage,onSave,onClose}){
-  const [form,setForm]=useState({title:"",contactId:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||"",amount:"",stage:initialStage||stages[0]||STAGES[0],tags:""});
+function DealModal({contacts,managers,sites,stages=STAGES,tagsCatalog=[],initialStage,onSave,onClose}){
+  const [form,setForm]=useState({title:"",contactId:"",managerId:managers[0]?.id||"",siteId:sites[0]?.id||"",amount:"",stage:initialStage||stages[0]||STAGES[0],tags:[]});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   return <Modal title="Новая сделка" onClose={onClose} width={420}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1264,16 +1265,16 @@ function DealModal({contacts,managers,sites,stages=STAGES,initialStage,onSave,on
         <Fld label="Сумма (₽)"><input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)} placeholder="0"/></Fld>
       </div>
       <Fld label="Этап"><select value={form.stage} onChange={e=>set("stage",e.target.value)}>{stages.map(s=><option key={s} value={s}>{s}</option>)}</select></Fld>
-      <Fld label="Теги"><input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="срочно, склад, VIP"/></Fld>
+      <Fld label="Теги"><TagSelector value={form.tags} tags={tagsCatalog} onChange={v=>set("tags",v)}/></Fld>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn onClick={onClose}>Отмена</Btn>
-        <Btn primary onClick={()=>{if(!form.title)return;onSave({...form,amount:parseInt(form.amount)||0,tags:form.tags?form.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});}}>Сохранить</Btn>
+        <Btn primary onClick={()=>{if(!form.title)return;onSave({...form,amount:parseInt(form.amount)||0,tags:form.tags||[]});}}>Сохранить</Btn>
       </div>
     </div>
   </Modal>;
 }
 
-function Deals({deals,contacts,managers,sites,stages=STAGES,onAdd,onMove,onDelete,onStagesChange,onRenameStage}){
+function Deals({deals,contacts,managers,sites,stages=STAGES,tagsCatalog=[],onAdd,onMove,onDelete,onStagesChange,onRenameStage}){
   const [siteF,setSiteF]=useState("all");
   const [tagF,setTagF]=useState("all");
   const tags=[...new Set(deals.flatMap(d=>d.tags||[]))];
@@ -1349,7 +1350,7 @@ function Deals({deals,contacts,managers,sites,stages=STAGES,onAdd,onMove,onDelet
                   {site&&<SiteBadge siteId={d.siteId} sites={sites}/>}
                   {d.amount>0&&<div style={{fontSize:13,color:C.green,fontWeight:600,margin:"6px 0"}}>{(d.amount||0).toLocaleString()} ₽</div>}
                   <div style={{marginBottom:6}}><MgrBadge managerId={d.managerId} managers={managers}/></div>
-                  {d.tags?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{d.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}
+                  {d.tags?.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{d.tags.map(t=><TagBadge key={t} name={t} tags={tagsCatalog} small/>)}</div>}
                   <div style={{display:"flex",gap:4}}>
                     {si>0&&<Btn small onClick={()=>onMove(d.id,stages[si-1])}>←</Btn>}
                     {si<stages.length-1&&<Btn small primary onClick={()=>onMove(d.id,stages[si+1])}>→</Btn>}
@@ -1367,7 +1368,7 @@ function Deals({deals,contacts,managers,sites,stages=STAGES,onAdd,onMove,onDelet
 }
 
 // ── Warehouse ─────────────────────────────────────────────────────────────────
-function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions=[],contacts,setContacts,managers,sites,currentManager,onCreateDeal,documents,setDocuments,onCreateDocument,contracts,setContracts,deals,onAddClient,onAddLead,onAddSource,onAddProduct,onAddDocument,onAddTask,mobile=false}){
+function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions=[],contacts,setContacts,managers,sites,currentManager,onCreateDeal,documents,setDocuments,onCreateDocument,contracts,setContracts,deals,tagsCatalog=[],onAddClient,onAddLead,onAddSource,onAddProduct,onAddDocument,onAddTask,mobile=false}){
   const [section,setSection]=useState("indicators");
   const [query,setQuery]=useState("");
   const [category,setCategory]=useState("all");
@@ -1379,7 +1380,7 @@ function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions
   const [stage,setStage]=useState("Новый");
   const [dealTitle,setDealTitle]=useState("");
   const [receipt,setReceipt]=useState({productId:products[0]?.id||"",qty:1,cost:"",supplierId:contacts[0]?.id||"",number:""});
-  const [model,setModel]=useState({name:"",sku:"",category:"Товары",unit:"шт",price:"",cost:"",stock:0,tags:""});
+  const [model,setModel]=useState({name:"",sku:"",category:"Товары",unit:"шт",price:"",cost:"",stock:0,tags:[]});
   const [contract,setContract]=useState({contactId:contacts[0]?.id||"",number:"",subject:"",amount:"",status:"Действует"});
   const categories=["all",...new Set(products.map(p=>p.category))];
   const productTags=[...new Set(products.flatMap(p=>p.tags||[]))];
@@ -1448,8 +1449,8 @@ function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions
   };
   const addModel=()=>{
     if(!model.name||!model.sku)return;
-    onCreateProduct?.({sku:model.sku,name:model.name,category:model.category||"Товары",unit:model.unit||"шт",stock:parseInt(model.stock)||0,reserved:0,price:parseInt(model.price)||0,cost:parseInt(model.cost)||0,tags:model.tags?model.tags.split(",").map(t=>t.trim()).filter(Boolean):[]});
-    setModel({name:"",sku:"",category:"Товары",unit:"шт",price:"",cost:"",stock:0,tags:""});
+    onCreateProduct?.({sku:model.sku,name:model.name,category:model.category||"Товары",unit:model.unit||"шт",stock:parseInt(model.stock)||0,reserved:0,price:parseInt(model.price)||0,cost:parseInt(model.cost)||0,tags:model.tags||[]});
+    setModel({name:"",sku:"",category:"Товары",unit:"шт",price:"",cost:"",stock:0,tags:[]});
     setSection("stock");
   };
   const addContract=()=>{
@@ -1565,7 +1566,7 @@ function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions
 
     {section==="stock"&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
       {filtered.map(p=><div key={p.id} style={{...row,display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 95px 95px 120px 120px 110px",gap:8,alignItems:"center"}}>
-        <div><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted}}>{p.sku} · {p.category}</div>{p.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{p.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}</div>
+        <div><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted}}>{p.sku} · {p.category}</div>{p.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{p.tags.map(t=><TagBadge key={t} name={t} tags={tagsCatalog} small/>)}</div>}</div>
         <Badge label={`${p.stock} ${p.unit}`} color={available(p)>0?C.green:C.red}/>
         <Badge label={`Резерв ${p.reserved||0}`} color={C.amber}/>
         <div style={{fontSize:12,color:C.muted}}>{(p.cost||0).toLocaleString()} ₽ себ.</div>
@@ -1600,10 +1601,10 @@ function Warehouse({products,setProducts,onSaveProduct,onCreateProduct,positions
           <Fld label="Цена продажи"><input type="number" value={model.price} onChange={e=>setModel(m=>({...m,price:e.target.value}))}/></Fld>
           <Fld label="Себестоимость"><input type="number" value={model.cost} onChange={e=>setModel(m=>({...m,cost:e.target.value}))}/></Fld>
         </div>
-        <Fld label="Теги товара"><input value={model.tags} onChange={e=>setModel(m=>({...m,tags:e.target.value}))} placeholder="склад, max, оборудование"/></Fld>
+        <Fld label="Теги товара"><TagSelector value={model.tags} tags={tagsCatalog} onChange={v=>setModel(m=>({...m,tags:v}))}/></Fld>
         <Btn primary onClick={addModel}>Добавить номенклатуру</Btn>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fill,minmax(230px,1fr))",gap:8}}>{products.map(p=><div key={p.id} style={row}><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted,marginTop:3}}>{p.sku} · {p.category} · {p.unit}</div>{p.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:7,flexWrap:"wrap"}}>{p.tags.map(t=><Badge key={t} label={t} color={C.purple} small/>)}</div>}</div>)}</div>
+      <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fill,minmax(230px,1fr))",gap:8}}>{products.map(p=><div key={p.id} style={row}><div style={{fontWeight:600}}>{p.name}</div><div className="mono" style={{color:C.muted,marginTop:3}}>{p.sku} · {p.category} · {p.unit}</div>{p.tags?.length>0&&<div style={{display:"flex",gap:4,marginTop:7,flexWrap:"wrap"}}>{p.tags.map(t=><TagBadge key={t} name={t} tags={tagsCatalog} small/>)}</div>}</div>)}</div>
     </div>}
 
     {section==="sales"&&<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"minmax(300px,1fr) minmax(320px,420px)",gap:14}}>
@@ -2542,7 +2543,7 @@ export default function App(){
               const site=sites.find(s=>s.id===id);
               apiPatch(`/api/sites/${id}`,siteToApi({...site,active:!site?.active}),()=>setSites(p=>p.map(s=>s.id===id?{...s,active:!s.active}:s)));
             }}/>}
-          {page==="warehouse"&&<Warehouse products={products} setProducts={setProducts} onCreateProduct={createWarehouseProduct} onSaveProduct={saveWarehouseProduct} positions={warehousePositions} contacts={contacts} setContacts={setContacts} managers={managers} sites={sites} currentManager={cur} documents={warehouseDocs} setDocuments={setWarehouseDocs} onCreateDocument={createWarehouseDocument} contracts={contracts} setContracts={setContracts} deals={deals} mobile={isMobile}
+          {page==="warehouse"&&<Warehouse products={products} setProducts={setProducts} onCreateProduct={createWarehouseProduct} onSaveProduct={saveWarehouseProduct} positions={warehousePositions} contacts={contacts} setContacts={setContacts} managers={managers} sites={sites} currentManager={cur} documents={warehouseDocs} setDocuments={setWarehouseDocs} onCreateDocument={createWarehouseDocument} contracts={contracts} setContracts={setContracts} deals={deals} tagsCatalog={tagsCatalog} mobile={isMobile}
             onAddClient={openClient}
             onAddLead={openLead}
             onAddSource={openSource}
@@ -2560,11 +2561,11 @@ export default function App(){
             onRead={id=>setMessages(p=>p.map(m=>m.id===id?{...m,read:true}:m))}/>}
           {page==="chat"&&<InternalChat messages={internalMessages} setMessages={setInternalMessages} managers={managers} currentManager={cur} mobile={isMobile}/>}
           {page==="calls"&&<Calls calls={calls} contacts={contacts} managers={managers} sites={sites} onAdd={()=>setModal("add-call")} mobile={isMobile}/>}
-          {page==="contacts"&&<Contacts contacts={contacts} calls={calls} messages={messages} managers={managers} sites={sites} mobile={isMobile}
+          {page==="contacts"&&<Contacts contacts={contacts} calls={calls} messages={messages} managers={managers} sites={sites} tagsCatalog={tagsCatalog} mobile={isMobile}
             onAdd={()=>setModal("add-contact")}
             onEdit={c=>setModal({type:"edit-contact",data:c})}
             onStageChange={moveLeadStage}/>}
-          {page==="deals"&&<Deals deals={deals} contacts={contacts} managers={managers} sites={sites} stages={dealStages}
+          {page==="deals"&&<Deals deals={deals} contacts={contacts} managers={managers} sites={sites} stages={dealStages} tagsCatalog={tagsCatalog}
             onAdd={stage=>setModal({type:"add-deal",stage})}
             onStagesChange={setDealStages}
             onRenameStage={renameDealStage}
@@ -2592,12 +2593,12 @@ export default function App(){
     {/* Modals */}
     {modal==="add-site"&&<SiteModal managers={managers} onSave={async f=>{await createSite(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal?.type==="edit-site"&&<SiteModal initial={modal.data} managers={managers} onSave={async f=>{await saveSite(modal.data,f);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {(modal==="add-contact"||modal?.type==="add-contact")&&<ContactModal preset={modal?.preset} managers={managers} sites={sites} onSave={async f=>{await createContact(f);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="edit-contact"&&<ContactModal initial={modal.data} managers={managers} sites={sites} onSave={async f=>{await saveContact(modal.data,f);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="add-product"&&<ProductModal onSave={async f=>{await createWarehouseProduct(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {(modal==="add-contact"||modal?.type==="add-contact")&&<ContactModal preset={modal?.preset} managers={managers} sites={sites} tagsCatalog={tagsCatalog} onSave={async f=>{await createContact(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="edit-contact"&&<ContactModal initial={modal.data} managers={managers} sites={sites} tagsCatalog={tagsCatalog} onSave={async f=>{await saveContact(modal.data,f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="add-product"&&<ProductModal tagsCatalog={tagsCatalog} onSave={async f=>{await createWarehouseProduct(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-document"&&<WarehouseDocumentModal contacts={contacts} onSave={async f=>{await createWarehouseDocument(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-call"&&<CallModal contacts={contacts} managers={managers} sites={sites} onSave={async f=>{await createCall(f);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal?.type==="add-deal"&&<DealModal contacts={contacts} managers={managers} sites={sites} stages={dealStages} initialStage={modal.stage} onSave={async f=>{await createDeal(f);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="add-deal"&&<DealModal contacts={contacts} managers={managers} sites={sites} stages={dealStages} tagsCatalog={tagsCatalog} initialStage={modal.stage} onSave={async f=>{await createDeal(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-task"&&<TaskModal contacts={contacts} managers={managers} onSave={async f=>{await createTask(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="add-manager"&&<ManagerModal onSave={async f=>{await createManager(f);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal?.type==="edit-manager"&&<ManagerModal initial={modal.data} onSave={async f=>{await saveManager(modal.data,{...modal.data,...f});setModal(null);}} onClose={()=>setModal(null)}/>}
