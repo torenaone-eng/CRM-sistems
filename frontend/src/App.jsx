@@ -761,7 +761,15 @@ function Sites({sites,managers,onAdd,onEdit,onDelete,onToggle}){
     {/* Widget snippet */}
     {sites.length>0&&<div style={{background:C.surface,borderRadius:12,padding:20,border:`1px solid ${C.border}`}}>
       <div style={{fontWeight:600,marginBottom:8}}>Подключение к сайту</div>
-      <div style={{fontSize:12,color:C.muted,marginBottom:10}}>Вставь в нужное место сайта, где должна появиться форма заявки:</div>
+      <div style={{fontSize:12,color:C.muted,marginBottom:10}}>Безопасный вариант: старые формы и amoCRM остаются как есть, этот код только дублирует заявку в torenaOne:</div>
+      <pre style={{background:C.card,borderRadius:9,padding:"12px 16px",fontSize:11,fontFamily:"IBM Plex Mono,monospace",color:C.text,border:`1px solid ${C.border}`,overflowX:"auto",lineHeight:1.8}}>{`<script
+  src="${PUBLIC_CRM_URL}/mm-crm-capture.js"
+  data-api="${PUBLIC_CRM_URL}"
+  data-site-key="${sites[0]?.apiKey||PUBLIC_SITE_KEY}"
+  data-form="form"
+  data-source="site-form-copy">
+</script>`}</pre>
+      <div style={{fontSize:12,color:C.muted,margin:"14px 0 10px"}}>Отдельная новая форма torenaOne, если нужно поставить её на отдельную страницу или блок:</div>
       <pre style={{background:C.card,borderRadius:9,padding:"12px 16px",fontSize:11,fontFamily:"IBM Plex Mono,monospace",color:C.text,border:`1px solid ${C.border}`,overflowX:"auto",lineHeight:1.8}}>{`<div id="mm-crm-widget"></div>
 <script
   src="${PUBLIC_CRM_URL}/mm-crm-widget.js"
